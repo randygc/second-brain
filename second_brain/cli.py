@@ -11,7 +11,8 @@ from .google_calendar import (GoogleCalendarSource, JSONCalendarSource,
                               authorize, authorized_session)
 from .preview import SourceError, preview
 from .report import write_report
-from .action_store import StoreError, import_one, select_title_action
+from .action_store import StoreError, import_one, select_title_action, plan_batch, import_batch
+from .local_files import private_write
 from .extraction import title_action_text
 from .linear_store import LinearActionStore, LinearClient, destinations
 
@@ -43,6 +44,15 @@ def main(argv=None) -> int:
     single.add_argument("--api-key-file", type=Path)
     single.add_argument("--journal", type=Path, default=Path(".local/linear-imports.sqlite3"))
     single.add_argument("--execute", action="store_true", help="Actually write the selected issue; default is a local-only plan")
+    batch = commands.add_parser("import-batch", help="Plan or execute the complete five-day extraction")
+    batch.add_argument("--report", type=Path, required=True)
+    batch.add_argument("--workspace-id", required=True)
+    batch.add_argument("--team-id", required=True)
+    batch.add_argument("--backlog-state-id")
+    batch.add_argument("--api-key-file", type=Path)
+    batch.add_argument("--journal", type=Path, default=Path(".local/linear-imports.sqlite3"))
+    batch.add_argument("--results-file", type=Path, default=Path(".local/import-batch-results.json"))
+    batch.add_argument("--execute", action="store_true", help="Create missing actions; default is a local-only plan")
     args = parser.parse_args(argv)
     try:
         if args.command == "auth":
@@ -52,7 +62,7 @@ def main(argv=None) -> int:
         if args.command == "linear-destinations":
             print(json.dumps(destinations(LinearClient(args.api_key_file)), indent=2))
             return 0
-        if args.command in {"candidates", "import-one"}:
+        if args.command in {"candidates", "import-one", "import-batch"}:
             try:
                 report = json.loads(args.report.read_text(encoding="utf-8"))
             except (ValueError, OSError) as exc:
@@ -66,6 +76,20 @@ def main(argv=None) -> int:
                         print(json.dumps({"source_record_id": action["source_record_id"], "title": draft.title,
                                           "scheduled_date": action["scheduled_date"]}, ensure_ascii=False))
                 return 0
+            if args.command == "import-batch":
+                drafts = plan_batch(report)
+                if not args.execute:
+                    print(json.dumps({"mode": "plan_only", "action_count": len(drafts), "daily_stats": report["daily_stats"],
+                        "actions": [{"import_identity": d.import_identity, "title": d.title, "source_record_id": d.provenance["source_record_id"]} for d in drafts]}, ensure_ascii=False, indent=2))
+                    return 0
+                if not args.api_key_file:
+                    raise StoreError("--execute requires --api-key-file.")
+                client = LinearClient(args.api_key_file, request_budget=min(1000, max(30, len(drafts) * 4 + 10)))
+                store = LinearActionStore(client, args.workspace_id, args.team_id, args.journal, args.backlog_state_id)
+                result = import_batch(report, store)
+                private_write(args.results_file, json.dumps(result, ensure_ascii=False, indent=2) + "\n")
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return 2 if result["counts"]["failed"] else 0
             draft = select_title_action(report, args.source_record_id)
             if not args.execute:
                 print(json.dumps({"mode": "plan_only", "workspace_id": args.workspace_id,

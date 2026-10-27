@@ -96,12 +96,25 @@ def _fence(text: str, language="") -> str:
 
 def issue_description(draft: ActionDraft) -> str:
     p = draft.provenance
-    return (draft.details + "\n\n---\n## Import provenance\n\n"
+    flags = p.get("extracted_payload", {}).get("review_flags", [])
+    review = "\n- Review flags (unresolved): " + ", ".join(flags) if flags else ""
+    return (display_details(draft) + "\n\n---\n## Import provenance\n\n"
             f"- Source: {p['source_type']}\n- Scheduled calendar date: {p['scheduled_date']}\n"
             f"- Original source creation: {p.get('source_created_at') or 'Unavailable (not substituted)'}\n"
             f"- Source modification: {p.get('source_updated_at') or 'Unavailable'}\n"
-            f"- Import identity: {draft.import_identity}\n\n"
+            f"- Import identity: {draft.import_identity}{review}\n\n"
             "Original source content and portable metadata:\n\n" + _fence(json.dumps(p, ensure_ascii=False, indent=2), "json"))
+
+
+def display_title(draft: ActionDraft) -> str:
+    # Full text is preserved in the description and portable extraction payload.
+    title = draft.title.strip()
+    return title if len(title) <= 255 else title[:252] + "..."
+
+
+def display_details(draft: ActionDraft) -> str:
+    return ("## Full action text\n\n" + draft.title + "\n\n" + draft.details
+            if len(draft.title) > 255 else draft.details)
 
 
 def description_matches(description: str, draft: ActionDraft) -> bool:
@@ -112,9 +125,18 @@ def description_matches(description: str, draft: ActionDraft) -> bool:
     """
     import re
     try:
-        details, metadata = description.rsplit("\n---\n", 1)
+        separators = list(re.finditer(r"(?m)^---\n", description))
+        if not separators:
+            return False
+        divider = separators[-1]
+        details, metadata = description[:divider.start()], description[divider.end():]
         match = re.search(r"(?ms)^(`{3,})json\n(.*?)\n\1\s*$", metadata)
-        return (details.strip() == draft.details.strip()
+        def canonical(value):
+            value = "\n".join(line.rstrip() for line in value.splitlines() if line.strip())
+            value = re.sub(r"\]\(<([^>\n]+)>\)", r"](\1)", value)
+            value = re.sub(r"(?m)^( *)\\--", r"\1--", value)
+            return re.sub(r"(?m)^( *)[*+-] ", r"\1- ", value)
+        return (canonical(details) == canonical(display_details(draft))
                 and draft.import_identity in metadata
                 and match is not None
                 and json.loads(match.group(2)) == draft.provenance)
@@ -134,13 +156,20 @@ class LinearActionStore:
     def __init__(self, client, workspace_id: str, team_id: str, journal_path: Path, backlog_state_id: str | None = None):
         self.client, self.workspace_id, self.team_id = client, workspace_id, team_id
         self.journal_path, self.backlog_state_id = journal_path, backlog_state_id
+        self._destination_checked = False
+        self._backlog_id = None
 
     def _destination(self):
+        if self._destination_checked:
+            return
         data = self.client.query("query ImportDestination($team: String!) { organization { id name } team(id: $team) { id name } }", {"team": self.team_id})
         if (data.get("organization") or {}).get("id") != self.workspace_id or (data.get("team") or {}).get("id") != self.team_id:
             raise StoreError("Linear workspace/team does not match the explicit destination. No write sent.")
+        self._destination_checked = True
 
     def _backlog(self) -> str:
+        if self._backlog_id:
+            return self._backlog_id
         states, cursor, seen = [], None, set()
         while True:
             data = self.client.query("query ImportBacklog($team: String!, $after: String) { team(id: $team) { states(first: 50, after: $after) { nodes { id name type } pageInfo { hasNextPage endCursor } } } }", {"team": self.team_id, "after": cursor})
@@ -162,7 +191,8 @@ class LinearActionStore:
             states = named or states
         if len(states) != 1:
             raise StoreError("Select one explicit Backlog-category status for this team. No write sent.")
-        return states[0]["id"]
+        self._backlog_id = states[0]["id"]
+        return self._backlog_id
 
     def _lookup(self, issue_id):
         data = self.client.query(LOOKUP, {"id": issue_id})
@@ -185,7 +215,11 @@ class LinearActionStore:
         os.close(fd)
         os.chmod(self.journal_path, 0o600)
         db = sqlite3.connect(self.journal_path, timeout=30)
-        db.execute("CREATE TABLE IF NOT EXISTS imports (destination TEXT NOT NULL, import_identity TEXT NOT NULL, issue_id TEXT NOT NULL, snapshot TEXT NOT NULL, confirmed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(destination, import_identity))")
+        db.execute("CREATE TABLE IF NOT EXISTS imports (destination TEXT NOT NULL, import_identity TEXT NOT NULL, issue_id TEXT NOT NULL, snapshot TEXT NOT NULL, confirmed INTEGER NOT NULL DEFAULT 0, attempted INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(destination, import_identity))")
+        if "attempted" not in {row[1] for row in db.execute("PRAGMA table_info(imports)")}:
+            db.execute("ALTER TABLE imports ADD COLUMN attempted INTEGER NOT NULL DEFAULT 0")
+            db.execute("UPDATE imports SET attempted=1")  # Old reservations may already have been sent.
+            db.commit()
         return db
 
     def ensure_action(self, draft: ActionDraft) -> ImportResult:
@@ -195,6 +229,12 @@ class LinearActionStore:
         try:
             # Persist before network I/O; competing processes cannot both reserve.
             db.execute("BEGIN IMMEDIATE")
+            for prior, in db.execute("SELECT snapshot FROM imports WHERE destination=?", (destination,)):
+                p = json.loads(prior)["provenance"]
+                current = draft.provenance
+                keys = ["source_type", "calendar_id", "source_record_id"]
+                if all(p.get(k) == current.get(k) for k in keys) and p.get("original_content") != current.get("original_content"):
+                    raise StoreError("Source content changed since its initial import. No new slots or replacements were created; source-change review is a later slice.")
             row = db.execute("SELECT issue_id, snapshot FROM imports WHERE destination=? AND import_identity=?", (destination, draft.import_identity)).fetchone()
             first_attempt = row is None
             if first_attempt:
@@ -207,13 +247,17 @@ class LinearActionStore:
             existing = self._lookup(issue_id)
             outcome = "existing"
             if existing is None:
-                if not first_attempt:
-                    raise StoreError("Recorded import has no visible destination issue. Its write may be pending, the issue may be deleted, or access may have changed. No replacement was created; inspect the journal and Linear before resolving manually.")
                 state = self._backlog()
                 saved = ActionDraft(**json.loads(snapshot))
+                if getattr(self.client, "remaining", 2) < 2:
+                    raise StoreError("Insufficient Linear request budget for create and verification. No create sent; this reservation can resume on the next run.")
+                claim = db.execute("UPDATE imports SET attempted=1 WHERE destination=? AND import_identity=? AND attempted=0", (destination, draft.import_identity))
+                db.commit()
+                if not claim.rowcount:
+                    raise StoreError("Recorded import has no visible destination issue. Its write may be pending, the issue may be deleted, or access may have changed. No replacement was created; inspect the journal and Linear before resolving manually.")
                 try:
                     data = self.client.query(CREATE, {"input": {"id": issue_id, "teamId": self.team_id,
-                        "stateId": state, "title": saved.title, "description": issue_description(saved)}})
+                        "stateId": state, "title": display_title(saved), "description": issue_description(saved)}})
                     payload = data.get("issueCreate") or {}
                     created = payload.get("issue")
                     if not payload.get("success") or not created or created.get("id") != issue_id:
@@ -230,7 +274,7 @@ class LinearActionStore:
                     # Validate outside the uncertain-write recovery handler:
                     # a mismatched read-back is an error, not a successful retry.
                     existing = self._lookup(issue_id)
-                    if not existing or existing["state"]["id"] != state or existing["title"] != saved.title or not description_matches(existing["description"], saved):
+                    if not existing or existing["state"]["id"] != state or existing["title"] != display_title(saved) or not description_matches(existing["description"], saved):
                         raise StoreError("Linear read-back did not match the requested import; inspect the reserved issue before retrying.")
             db.execute("UPDATE imports SET confirmed=1 WHERE destination=? AND import_identity=?", (destination, draft.import_identity))
             db.commit()

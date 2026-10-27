@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import date
 import io
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -70,6 +71,13 @@ class ControlledLinear:
             self.issues[p["id"]] = issue
             if self.normalize_markdown:
                 issue["description"] = issue["description"].replace("\n---\n##", "\n---\n\n##").replace("\n- Source:", "\n* Source:")
+                issue["description"] = issue["description"].strip()
+                # Canonicalize only the rendered body, not the JSON code fence.
+                body, marker, metadata = issue["description"].partition("## Import provenance")
+                body = re.sub(r"\]\((https?://[^\s)]+)\)", r"](<\1>)", body)
+                body = re.sub(r"(?m)^--(?!-)", r"\\--", body)
+                issue["description"] = body + marker + metadata
+                issue["title"] = issue["title"].strip()
             if self.lose_create_response:
                 raise StoreError("Lost mutation response")
             return {"issueCreate": {"success": True, "issue": deepcopy(issue)}}

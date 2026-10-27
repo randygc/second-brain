@@ -1,6 +1,6 @@
 # Single-action Linear import
 
-This slice creates exactly one explicitly selected title-defined action from a completed five-day extraction. It does not import the full list or implement lifecycle controls.
+`import-one` creates exactly one explicitly selected title-defined action from a completed five-day extraction. To import the full action set, use [batch import](batch-import.md). Neither command implements lifecycle controls.
 
 ## Credentials and destination
 
@@ -47,7 +47,7 @@ The Linear adapter keeps a small owner-only SQLite journal at `.local/linear-imp
 
 Keep this journal and back it up securely. Do not delete it or change `--journal` between runs: edited descriptions cannot reliably serve as a uniqueness index, and a fresh journal would lose reserved destination IDs. The visible import identity and portable metadata provide migration/recovery evidence but are not an immutable provider custom field. A separate portable migration flow remains future work.
 
-If a create response is lost, the adapter makes one read-only reconciliation. If the reserved issue is visible, it returns it. If not, it stops and preserves the reservation; later runs only look it up. It never blindly sends a second create, including after a crash, destination deletion, or access change. This deliberately means manual resolution may be needed after a failure before any mutation was actually sent. No automatic journal reset is provided.
+If a create response is lost, the adapter makes one read-only reconciliation. If the reserved issue is visible, it returns it. If not, it stops and preserves the attempted reservation; later runs only look it up. It never blindly sends a second create, including after a crash, destination deletion, or access change. Failures before a create is claimed can safely resume using the same reservation. No automatic journal reset is provided.
 
 Requests are bounded per invocation, check GraphQL errors even on HTTP 200, observe exhausted rate-budget headers, reject redirects, and do not automatically retry mutations. Credential values and raw provider error responses are not logged.
 
