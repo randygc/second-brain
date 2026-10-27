@@ -1,0 +1,3 @@
+# Retain an import journal independently of editable Linear descriptions
+
+Use an owner-only local SQLite journal to map portable source-derived import identities to reserved destination UUIDs and initial provenance snapshots; Linear remains authoritative for action content and workflow. Editable descriptions alone cannot guarantee repeat-import or uncertain-write recovery, so reserve a UUID before creating an issue and reconcile by that UUID rather than blindly retrying; the cost is that the journal must be backed up and absent/uncertain destinations may need manual resolution. A visible provenance section supports portability and migration, while provider field mapping and UUID behavior remain inside the Linear adapter.

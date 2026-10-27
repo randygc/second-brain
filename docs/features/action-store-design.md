@@ -6,7 +6,7 @@ Linear initially owns stored actions and their user-managed workflow. Do not bui
 
 Google Calendar remains the first read-only input. Slack, email, and audio remain future input sources. Shared extraction produces provider-independent action items; an action-store adapter writes them to Linear. Jira is a future replacement candidate, not an additional implementation in the first slice.
 
-All newly imported issues start in the selected team's Backlog status. Resolve its provider identifier through configuration; preserve user-managed status on subsequent imports. A dedicated Personal Actions team is recommended, but the actual workspace/team is not selected yet.
+All newly imported issues start in the selected team's Backlog status. Resolve its provider identifier through configuration; preserve user-managed status on subsequent imports. For the first single-action import, the user selected workspace RandyGC, team RandyGC, and the title-defined action “note from webby” (October 1, 2026). Destination identifiers and credential paths are supplied locally, not embedded in shared parsing code.
 
 ## Interface design direction
 
@@ -16,6 +16,7 @@ All newly imported issues start in the selected team's Backlog status. Resolve i
 - Put authentication, provider field mapping, pagination, request budgets, retry behavior, and uncertain-write reconciliation inside the adapter. An ambiguous create response must not trigger blind retries that produce duplicate issues.
 - Preserve original source creation timestamps as provenance; the destination issue creation date is a different timestamp.
 - Keep ingestion identity/mapping state distinct from the authoritative user-managed action. Determine whether portable metadata in Linear is sufficient before introducing a separate synchronization datastore.
+- The single-action implementation uses an owner-only local SQLite import journal plus visible portable provenance in the Linear description. A journal is necessary because user-editable descriptions cannot reliably preserve the immutable identity/reserved destination UUID required for safe uncertain-write recovery. Back up this journal; do not switch or delete it between runs. Linear remains the authoritative store for user-managed action content and workflow.
 - Test ingestion through its application interface with controlled source inputs and a test action-store adapter. Contract checks verify the Linear adapter without exposing provider details to parsing tests. Do not implement a speculative Jira adapter yet.
 - Replacing the adapter supports new imports; moving existing actions and user-managed state needs a separate migration flow. Preserve provenance and import identities so migration remains feasible.
 

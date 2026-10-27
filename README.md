@@ -1,6 +1,8 @@
 # Second Brain
 
-Read-only Google Calendar action extraction, with a replaceable destination planned for later slices. Issue #2 implements a reusable five-day preview; it does not write to Linear or modify Calendar events.
+Read-only Google Calendar action extraction and explicitly selected single-action ingestion into Linear through a replaceable action-store interface. Preview never writes to Linear or modifies Calendar events. The new `import-one` command defaults to a local-only plan and requires `--execute` to create the selected issue.
+
+For issue #3's CLI, credential setup, import identity and safe reruns, see [single-action Linear import](docs/linear-setup.md). Full-set import remains a later slice.
 
 ## Run without credentials or dependencies
 

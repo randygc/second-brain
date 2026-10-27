@@ -115,15 +115,22 @@ def matches_title(title: str) -> bool:
     return bool(MARKER.match(title))
 
 
-def extract_actions(title: str, raw_description: str) -> list[ExtractedAction]:
+def title_action_text(title: str) -> str | None:
     marker = MARKER.match(title)
     if not marker:
-        return []
-    description = normalized_description(raw_description)
+        return None
     remainder = title[marker.end():].strip()
     remainder = re.sub(r"^(?:(?:--|[:—–-])\s*)+", "", remainder).strip()
-    if remainder:
-        return [ExtractedAction(remainder, description)]
+    return remainder or None
+
+
+def extract_actions(title: str, raw_description: str) -> list[ExtractedAction]:
+    if not matches_title(title):
+        return []
+    description = normalized_description(raw_description)
+    title_text = title_action_text(title)
+    if title_text:
+        return [ExtractedAction(title_text, description)]
 
     actions = []
     for line in description.split("\n"):
