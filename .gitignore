@@ -1,0 +1,10 @@
+.DS_Store
+.venv/
+.local/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+credentials*.json
+client_secret*.json
+token*.json

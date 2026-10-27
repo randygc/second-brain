@@ -1,0 +1,3 @@
+# Use a replaceable action store with Linear first
+
+Use Linear as the initial authoritative action store and user interface for reviewing, editing, and managing action workflows, rather than building a custom lifecycle web page. Keep source connectors and shared parsing independent of a small action-store interface, with a Linear adapter isolating provider identifiers, field mappings, authentication, pagination, rate limits, and error handling; a future Jira or other adapter should replace it without changing extraction rules. This preserves portability because the user accepts Linear Free's access limitations but anticipates outgrowing its team limits; the exact synchronization-state storage and migration mechanism remain undecided.

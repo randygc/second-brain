@@ -1,0 +1,67 @@
+{
+  "calendarId": "fixture",
+  "summary": "Synthetic equivalents of six historical parsing cases",
+  "timeZone": "America/Los_Angeles",
+  "items": [
+    {
+      "id": "case-1",
+      "summary": "Action",
+      "description": "I think the project setup is incomplete. Check the setup guide and architecture notes. Confirm the configuration, then start the next discovery session.",
+      "status": "confirmed",
+      "created": "2026-09-01T09:00:00Z",
+      "start": {
+        "dateTime": "2026-09-28T09:00:00-07:00"
+      }
+    },
+    {
+      "id": "case-2",
+      "summary": "Actions",
+      "description": "Contacted [https://example.com/team/](https://example.com/team/) for a service referral. Submitted a question through online chat. They will respond by email.",
+      "status": "confirmed",
+      "created": "2026-09-01T09:00:00Z",
+      "start": {
+        "dateTime": "2026-09-28T10:00:00-07:00"
+      }
+    },
+    {
+      "id": "case-3",
+      "summary": "action",
+      "description": "Read the first course lesson.\nDiscuss consulting opportunities with an assistant.\nSchedule tomorrow -- call the service desk about an invoice",
+      "status": "confirmed",
+      "created": "2026-09-01T09:00:00Z",
+      "start": {
+        "dateTime": "2026-09-28T11:00:00-07:00"
+      }
+    },
+    {
+      "id": "case-4",
+      "summary": "Action -- loading tools for automated coding",
+      "description": "Course videos - loading and updating tools:\n\n1. [loading tools](https://example.com/video-one)\n2. [updating tools](https://example.com/video-two)",
+      "status": "confirmed",
+      "created": "2026-09-01T09:00:00Z",
+      "start": {
+        "dateTime": "2026-09-28T12:00:00-07:00"
+      }
+    },
+    {
+      "id": "case-5",
+      "summary": "action",
+      "description": "Apply for a community membership.\n**Ask the contractor to finish the workshop wiring -- connect the main and each circuit**\n\n* find a junction box\n* prepare leads for both boxes\n* install the final receptacle\n* store remaining conduit\n* secure the shallow box\n\n**Inspect the project vehicle**\nTest fuel pressure (**borrow a gauge**)\n\n* [replacement instructions](https://example.com/repair)\n\nWash spare linens\nPay the storage bill.\nReview equipment insurance\nCompare new insurance options",
+      "status": "confirmed",
+      "created": "2026-09-01T09:00:00Z",
+      "start": {
+        "dateTime": "2026-09-28T13:00:00-07:00"
+      }
+    },
+    {
+      "id": "case-6",
+      "summary": "action",
+      "description": "Set up a 4X3 grid of project metrics.\nUse a 15 minute timeframe.\nWrite a script to overlay a reference range (daily or intraday? Use the previous close for the opening interval\n\nPut together a list of topics for a learner to research:\n-- how to start a small garden service\n-- how to learn to use an assistant\n-- jobs working outdoors\n-- perhaps create a guided question template\nCall the learner at 7pm.\n\nPrepare the learner package\nSubmit the learner time sheet.",
+      "status": "confirmed",
+      "created": "2026-09-01T09:00:00Z",
+      "start": {
+        "dateTime": "2026-09-28T14:00:00-07:00"
+      }
+    }
+  ]
+}
