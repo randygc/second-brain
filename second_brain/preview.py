@@ -6,6 +6,7 @@ from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from .extraction import extract_actions, matches_title
+from .provenance import fingerprint
 
 
 class SourceError(Exception):
@@ -54,11 +55,12 @@ def preview(source: CalendarSource, calendar_id: str, start: date) -> dict:
             "matching_events": 0, "action_items": 0,
         } for i in range(5)}
         matching = []
+        observations = []
         seen_occurrences = set()
         for event in window.events:
             if not isinstance(event, dict):
                 raise SourceError("Calendar returned an invalid event record.")
-            if event.get("status") == "cancelled" or not matches_title(event.get("summary", "")):
+            if event.get("status") == "cancelled":
                 continue
             event_date, scheduled = _scheduled(event, zone)
             if event_date.isoformat() not in days:
@@ -69,10 +71,28 @@ def preview(source: CalendarSource, calendar_id: str, start: date) -> dict:
             if identity in seen_occurrences:
                 continue
             seen_occurrences.add(identity)
+            raw = event.get("description", "") or ""
+            if not isinstance(raw, str):
+                raise SourceError("Calendar returned a non-text event description.")
+            title = event.get("summary", "") or ""
+            eligible = matches_title(title)
+            observations.append((scheduled, identity, {
+                "source_type": "google_calendar", "calendar_id": window.calendar_id,
+                "source_record_id": event.get("recurringEventId") or identity,
+                "source_event_id": identity, "recurring_series_id": event.get("recurringEventId"),
+                "scheduled_date": event_date.isoformat(), "scheduled_start": scheduled,
+                "source_created_at": event.get("created"), "source_updated_at": event.get("updated"),
+                "content_fingerprint": fingerprint({"title": title, "description": raw}), "eligible": eligible,
+            }))
+            if not eligible:
+                continue
             days[event_date.isoformat()]["matching_events"] += 1
             matching.append((scheduled, identity, event_date, event))
         matching.sort(key=lambda row: (row[0], row[1]))
         seen_records = set()
+        observed_records = {}
+        for _, _, observation in sorted(observations, key=lambda row: (row[0], row[1])):
+            observed_records.setdefault(observation["source_record_id"], observation)
         items = []
         records = []
         for scheduled, event_id, event_date, event in matching:
@@ -94,6 +114,7 @@ def preview(source: CalendarSource, calendar_id: str, start: date) -> dict:
                 "original_content": {"title": event["summary"], "description": raw},
             }
             records.append({**provenance, "action_count": len(extracted)})
+            observed_records[record_id] = {**provenance, "eligible": True}
             for index, action in enumerate(extracted):
                 # Ordinal is only a preview locator, not a future persistent identity.
                 items.append({**asdict(action), "source_action_ordinal": index + 1, **provenance})
@@ -104,6 +125,9 @@ def preview(source: CalendarSource, calendar_id: str, start: date) -> dict:
             "start_date": start.isoformat(),
             "end_date_inclusive": (start + timedelta(days=4)).isoformat(),
             "daily_stats": list(days.values()), "source_records": records,
+            # Nonmatching records retain only a content fingerprint and metadata,
+            # allowing review of renamed known sources without storing unrelated text.
+            "observed_records": list(observed_records.values()),
             "matching_events": sum(d["matching_events"] for d in days.values()),
             "action_count": len(items), "actions": items,
             "warnings": ["Missing original creation timestamps are recorded as null; no substitute is inferred."]

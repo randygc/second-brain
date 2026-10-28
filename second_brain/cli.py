@@ -84,12 +84,12 @@ def main(argv=None) -> int:
                     return 0
                 if not args.api_key_file:
                     raise StoreError("--execute requires --api-key-file.")
-                client = LinearClient(args.api_key_file, request_budget=min(1000, max(30, len(drafts) * 4 + 10)))
+                client = LinearClient(args.api_key_file, request_budget=min(1000, max(100, len(drafts) * 8 + 20)))
                 store = LinearActionStore(client, args.workspace_id, args.team_id, args.journal, args.backlog_state_id)
                 result = import_batch(report, store)
                 private_write(args.results_file, json.dumps(result, ensure_ascii=False, indent=2) + "\n")
                 print(json.dumps(result, ensure_ascii=False, indent=2))
-                return 2 if result["counts"]["failed"] else 0
+                return 2 if result["status"] != "complete" else 0
             draft = select_title_action(report, args.source_record_id)
             if not args.execute:
                 print(json.dumps({"mode": "plan_only", "workspace_id": args.workspace_id,

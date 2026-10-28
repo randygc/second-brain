@@ -10,7 +10,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request
 from uuid import uuid4
 
-from .action_store import ActionDraft, ImportResult, StoreError
+from .action_store import ActionDraft, ImportResult, SourceReview, StoreError
+from .provenance import source_key, revision, fingerprint
+from .source_review import REVIEW_FORMAT, review_comments, comment_matches
 
 
 ENDPOINT = "https://api.linear.app/graphql"
@@ -220,7 +222,74 @@ class LinearActionStore:
             db.execute("ALTER TABLE imports ADD COLUMN attempted INTEGER NOT NULL DEFAULT 0")
             db.execute("UPDATE imports SET attempted=1")  # Old reservations may already have been sent.
             db.commit()
+        db.execute("CREATE TABLE IF NOT EXISTS source_reviews (destination TEXT, source_key TEXT, revision TEXT, issue_id TEXT, comment_id TEXT, body TEXT, attempted INTEGER DEFAULT 0, confirmed INTEGER DEFAULT 0, PRIMARY KEY(destination, source_key, revision, issue_id))")
+        db.commit()
         return db
+
+    def review_source(self, observation: dict) -> SourceReview:
+        """Append evidence without changing the destination's editable fields."""
+        destination = json.dumps(["linear", self.workspace_id, self.team_id])
+        key, version = source_key(observation), revision(observation)
+        db = self._journal()
+        try:
+            prior = [(issue_id, json.loads(snapshot)) for issue_id, snapshot in
+                     db.execute("SELECT issue_id,snapshot FROM imports WHERE destination=?", (destination,))]
+            affected = [(i, p) for i, p in prior if source_key(p["provenance"]) == key]
+            if not affected:
+                return SourceReview("unseen")
+            if all(revision(p["provenance"]) == version for _, p in affected):
+                return SourceReview("unchanged")
+            self._destination()
+            bodies = review_comments([draft for _, draft in affected], observation)
+            review_version = fingerprint([version, REVIEW_FORMAT])
+            for (issue_id, baseline), body in zip(affected, bodies):
+                if body is None:
+                    continue
+                if not self._lookup(issue_id):
+                    raise StoreError("Changed source has no accessible destination. Review remains unresolved; no replacement created.")
+                db.execute("INSERT OR IGNORE INTO source_reviews(destination,source_key,revision,issue_id,comment_id,body) VALUES (?,?,?,?,?,?)",
+                           (destination, key, review_version, issue_id, str(uuid4()), body))
+                db.commit()
+                row = db.execute("SELECT comment_id,body FROM source_reviews WHERE destination=? AND source_key=? AND revision=? AND issue_id=?",
+                                 (destination, key, review_version, issue_id)).fetchone()
+                comment_id, saved_body = row
+                def lookup():
+                    data = self.client.query("query ImportReview($issue: String!, $id: ID!) { issue(id: $issue) { comments(first: 2, filter: {id: {eq: $id}}) { nodes { id body } } } }", {"issue": issue_id, "id": comment_id})
+                    try:
+                        nodes = data["issue"]["comments"]["nodes"]
+                        if len(nodes) > 1:
+                            raise StoreError("Conflicting review comment identities.")
+                        return nodes[0] if nodes else None
+                    except (KeyError, TypeError):
+                        raise StoreError("Incomplete review lookup; no blind comment retry sent.") from None
+                existing = lookup()
+                if existing is None:
+                    if getattr(self.client, "remaining", 2) < 2:
+                        raise StoreError("Insufficient request budget for review comment and verification.")
+                    claim = db.execute("UPDATE source_reviews SET attempted=1 WHERE comment_id=? AND attempted=0", (comment_id,))
+                    db.commit()
+                    if not claim.rowcount:
+                        raise StoreError("Review comment outcome is uncertain or comment absent. No duplicate was created; inspect manually.")
+                    try:
+                        data = self.client.query("mutation ImportReviewComment($input: CommentCreateInput!) { commentCreate(input: $input) { success comment { id body } } }",
+                                                 {"input": {"id": comment_id, "issueId": issue_id, "body": saved_body}})
+                        if not (data.get("commentCreate") or {}).get("success"):
+                            raise StoreError("Review comment response incomplete.")
+                    except StoreError:
+                        existing = lookup()
+                        if existing is None:
+                            raise StoreError("Review comment outcome uncertain. Reservation retained; no second write sent.") from None
+                    else:
+                        existing = lookup()
+                    if not comment_matches((existing or {}).get("body", ""), saved_body):
+                        raise StoreError("Review read-back did not preserve evidence; inspect the reserved comment.")
+                db.execute("UPDATE source_reviews SET confirmed=1 WHERE comment_id=?", (comment_id,))
+                db.commit()
+            return SourceReview("changed", sum(body is not None for body in bodies), version)
+        except sqlite3.Error as exc:
+            raise StoreError("Cannot update source review journal; preserve it for recovery.") from exc
+        finally:
+            db.close()
 
     def ensure_action(self, draft: ActionDraft) -> ImportResult:
         self._destination()
@@ -234,7 +303,7 @@ class LinearActionStore:
                 current = draft.provenance
                 keys = ["source_type", "calendar_id", "source_record_id"]
                 if all(p.get(k) == current.get(k) for k in keys) and p.get("original_content") != current.get("original_content"):
-                    raise StoreError("Source content changed since its initial import. No new slots or replacements were created; source-change review is a later slice.")
+                    raise StoreError("Source content changed since its initial import. No new slots or replacements were created; run batch source review before importing changed content.")
             row = db.execute("SELECT issue_id, snapshot FROM imports WHERE destination=? AND import_identity=?", (destination, draft.import_identity)).fetchone()
             first_attempt = row is None
             if first_attempt:

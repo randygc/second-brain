@@ -1,11 +1,12 @@
 """Destination-independent single-action and bounded batch ingestion."""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from .extraction import title_action_text
+from .provenance import source_key, revision
 
 
 class StoreError(Exception):
@@ -28,7 +29,18 @@ class ImportResult:
     url: str
 
 
+@dataclass(frozen=True)
+class SourceReview:
+    outcome: str  # unseen, unchanged, changed
+    affected_actions: int = 0
+    evidence_id: str | None = None
+
+
 class ActionStore(Protocol):
+    def review_source(self, observation: dict) -> SourceReview:
+        """Append unresolved evidence for changed sources; never replace actions."""
+        ...
+
     def ensure_action(self, draft: ActionDraft) -> ImportResult:
         """Create once or return an existing action, preserving user edits.
 
@@ -74,7 +86,7 @@ def plan_batch(report: dict) -> list[ActionDraft]:
     """Freeze initial ordinal slots, never derive identity from action wording.
 
     A destination must reject a changed source snapshot before assigning any new
-    slots. This slice imports unchanged snapshots; change reconciliation is #5.
+    slots. Source review holds changed snapshots for explicit resolution.
     """
     if not isinstance(report, dict) or report.get("status") != "complete":
         raise StoreError("Only a complete five-day extraction can be imported.")
@@ -129,11 +141,50 @@ def plan_batch(report: dict) -> list[ActionDraft]:
 def import_batch(report: dict, store: ActionStore) -> dict:
     drafts = plan_batch(report)  # Validate the whole batch before any writes.
     results = []
-    counts = {"created": 0, "already_imported": 0, "reconciled": 0, "failed": 0}
+    counts = {"created": 0, "already_imported": 0, "reconciled": 0, "changed": 0, "failed": 0}
+    observations = report.get("observed_records", report.get("source_records", []))
+    try:
+        if not isinstance(observations, list):
+            raise StoreError("Invalid source observations; regenerate preview.")
+        observed = {}
+        for observation in observations:
+            key = source_key(observation)
+            revision(observation)
+            if key in observed:
+                raise StoreError("Conflicting source observations; regenerate preview.")
+            observed[key] = observation
+        for draft in drafts:
+            observation = observed.get(source_key(draft.provenance))
+            if observation and revision(observation) != revision(draft.provenance):
+                raise StoreError("Source observation and extracted actions disagree; regenerate preview.")
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise StoreError("Invalid source observations; regenerate preview.") from exc
+    for draft in drafts:
+        observed.setdefault(source_key(draft.provenance), draft.provenance)
+    reviews, review_errors = {}, {}
+    review_rows = []
+    for key, observation in observed.items():
+        try:
+            review = store.review_source(observation)
+            if review.outcome not in {"unseen", "unchanged", "changed"}:
+                raise StoreError("Unsupported source review outcome.")
+            reviews[key] = review
+            review_rows.append({"source_record_id": observation["source_record_id"], **asdict(review)})
+        except StoreError as exc:
+            review_errors[key] = str(exc)
+            review_rows.append({"source_record_id": observation["source_record_id"], "outcome": "failed", "error": str(exc)})
     for draft in drafts:
         row = {"import_identity": draft.import_identity, "source_record_id": draft.provenance["source_record_id"],
                "scheduled_date": draft.provenance["scheduled_date"]}
         try:
+            key = source_key(draft.provenance)
+            if key in review_errors:
+                raise StoreError(review_errors[key])
+            if reviews[key].outcome == "changed":
+                counts["changed"] += 1
+                row["outcome"] = "changed"
+                results.append(row)
+                continue
             result = store.ensure_action(draft)
             outcome = "already_imported" if result.outcome == "existing" else result.outcome
             if outcome not in {"created", "already_imported", "reconciled"}:
@@ -144,6 +195,9 @@ def import_batch(report: dict, store: ActionStore) -> dict:
             counts["failed"] += 1
             row.update(outcome="failed", error=str(exc))
         results.append(row)
-    return {"status": "partial_failure" if counts["failed"] else "complete", "counts": counts,
+    return {"status": "partial_failure" if counts["failed"] or review_errors else "complete", "counts": counts,
+            "source_reviews": review_rows,
+            "changed_sources": sum(r.outcome == "changed" for r in reviews.values()),
+            "affected_existing_actions": sum(r.affected_actions for r in reviews.values() if r.outcome == "changed"),
             "daily_stats": report["daily_stats"], "matching_events": report["matching_events"],
             "action_count": len(drafts), "results": results}

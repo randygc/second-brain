@@ -30,6 +30,10 @@ class TestActionStore:
     def __init__(self):
         self.actions = {}
 
+    def review_source(self, observation):
+        from second_brain.action_store import SourceReview
+        return SourceReview("unseen")
+
     def ensure_action(self, draft):
         if draft.import_identity in self.actions:
             return ImportResult("existing", draft.import_identity, "TEST-1", "https://example.com/action")
@@ -42,6 +46,7 @@ class ControlledLinear:
 
     def __init__(self):
         self.issues = {}
+        self.comments = {}
         self.attempted_creates = 0
         self.lose_create_response = False
         self.fail_create_before_commit = False
@@ -58,6 +63,13 @@ class ControlledLinear:
         if "query ImportedIssue" in document:
             issue = self.issues.get(variables["id"])
             return {"issues": {"nodes": [deepcopy(issue)] if issue else []}}
+        if "query ImportReview(" in document:
+            comment = self.comments.get(variables["id"])
+            return {"issue": {"comments": {"nodes": [deepcopy(comment)] if comment else []}}}
+        if "mutation ImportReviewComment" in document:
+            p = variables["input"]
+            self.comments[p["id"]] = deepcopy(p)
+            return {"commentCreate": {"success": True, "comment": deepcopy(p)}}
         if "mutation ImportAction" in document:
             self.attempted_creates += 1
             if self.fail_create_before_commit:

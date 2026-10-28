@@ -83,3 +83,9 @@ Deliver small end-to-end slices, starting with repeatable five-day extraction, f
 - Handling unavailable original timestamps, removed/reordered actions in changed records, destination deletion, and review evidence representation require explicit implementation decisions. Broader retrieval must avoid expanding infinite recurrence forever.
 - Linear's current free limits and API restrictions are summarized in the action-store design notes; verify current capacity and respect returned API budgets during implementation.
 - Native Linear editing/deletion replaces the former iteration-2 custom-control priority. Completing automated source-change reconciliation remains future work.
+
+## Source-change comment refinement — October 27, 2026
+
+Present updated extracted action names and formatted descriptions directly in action-specific review comments, with the source update timestamp. If a former independent action no longer has a corresponding action because it was removed or became supporting content, explain these possibilities and suggest manual deletion. Preserve the issue and its user-managed fields. Do not infer correspondence from shifted action ordinals; uncertain matches require review without a deletion recommendation. Keep source snapshots in private import evidence rather than displaying raw JSON in review comments.
+
+A changed Calendar event must not produce change comments on unchanged sibling actions. Compare each confidently matched original extracted name/details/review flags with the updated extraction before commenting; source-level formatting, action reorder, and changed action counts alone do not make every action changed. Previously posted review history is retained.

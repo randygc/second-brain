@@ -1,3 +1,6 @@
+import contextlib
+import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -18,7 +21,7 @@ class BatchTests(unittest.TestCase):
         title = select_title_action(r, "case-4")
         store.ensure_action(title)
         first = import_batch(r, store)
-        self.assertEqual(first["counts"], {"created": 20, "already_imported": 1, "reconciled": 0, "failed": 0})
+        self.assertEqual(first["counts"], {"created": 20, "already_imported": 1, "reconciled": 0, "changed": 0, "failed": 0})
         second = import_batch(r, store)
         self.assertEqual(second["counts"]["already_imported"], 21)
         self.assertEqual(len(store.actions), 21)
@@ -149,8 +152,11 @@ class BatchTests(unittest.TestCase):
             for action in changed["actions"]:
                 if action["source_record_id"] == "case-6":
                     action["original_content"]["description"] += "\nNew content"
+            changed.pop("observed_records", None)
+            changed.pop("source_records", None)
             result = import_batch(changed, LinearActionStore(client, "workspace", "team", path))
-            self.assertEqual(result["counts"]["failed"], 7)
+            self.assertEqual(result["counts"]["changed"], 7)
+            self.assertEqual(len(client.comments), 0)
             self.assertEqual(client.attempted_creates, 21)
 
     def test_preflight_failure_does_not_block_a_safe_resume(self):
@@ -171,9 +177,112 @@ class BatchTests(unittest.TestCase):
             self.assertEqual(second["counts"]["already_imported"], 20)
             self.assertEqual(client.attempted_creates, 21)
 
+    def test_changed_revision_is_recorded_once_and_preserves_user_fields(self):
+        from copy import deepcopy
+        with tempfile.TemporaryDirectory() as tmp:
+            client = ControlledLinear()
+            journal = Path(tmp) / "journal.sqlite3"
+            store = LinearActionStore(client, "workspace", "team", journal)
+            original = report()
+            import_batch(original, store)
+            for issue in client.issues.values():
+                issue.update(title="My title", description="My notes", state={"id": "done"})
+            baseline = deepcopy(client.issues)
+            changed = deepcopy(original)
+            changed.pop("observed_records", None)
+            changed.pop("source_records", None)
+            for a in changed["actions"]:
+                if a["source_record_id"] == "case-6":
+                    a["original_content"]["description"] += " changed"
+                    a["source_updated_at"] = "2026-10-27T12:00:00Z"
+            for _ in range(2):
+                result = import_batch(changed, LinearActionStore(client, "workspace", "team", journal))
+                self.assertEqual(result["changed_sources"], 1)
+                self.assertEqual(result["affected_existing_actions"], 1)
+            self.assertEqual(len(client.comments), 1)
+            self.assertEqual(client.issues, baseline)
+            self.assertTrue(all("Source changed — unresolved" in c["body"] for c in client.comments.values()))
+
+    def test_source_no_longer_matching_still_flags_prior_actions(self):
+        from second_brain.provenance import fingerprint
+        with tempfile.TemporaryDirectory() as tmp:
+            client = ControlledLinear()
+            store = LinearActionStore(client, "workspace", "team", Path(tmp) / "journal")
+            r = report()
+            import_batch(r, store)
+            observation = dict(r["source_records"][0])
+            observation.pop("original_content")
+            observation["content_fingerprint"] = fingerprint({"title": "No longer action", "description": ""})
+            observation["eligible"] = False
+            empty = dict(r, actions=[], action_count=0, observed_records=[observation],
+                         daily_stats=[dict(d, action_items=0) for d in r["daily_stats"]])
+            result = import_batch(empty, store)
+            self.assertEqual(result["changed_sources"], 1)
+            self.assertGreater(len(client.comments), 0)
+            self.assertEqual(len(client.issues), 21)
+
+    def test_recurring_later_window_keeps_initial_date(self):
+        from copy import deepcopy
+        with tempfile.TemporaryDirectory() as tmp:
+            client = ControlledLinear()
+            journal = Path(tmp) / "journal"
+            r = report()
+            for a in r["actions"]:
+                a["recurring_series_id"] = a["source_record_id"]
+            r.pop("observed_records", None)
+            r.pop("source_records", None)
+            import_batch(r, LinearActionStore(client, "workspace", "team", journal))
+            saved = deepcopy(client.issues)
+            for a in r["actions"]:
+                a["scheduled_date"] = "2026-10-01"
+                a["scheduled_start"] = "2026-10-01"
+                a["source_event_id"] += "_later"
+                a["source_updated_at"] = "2026-10-27T12:00:00Z"
+            result = import_batch(r, LinearActionStore(client, "workspace", "team", journal))
+            self.assertEqual(result["counts"]["already_imported"], 21)
+            self.assertEqual(result["changed_sources"], 0)
+            self.assertEqual(client.issues, saved)
+
+    def test_lost_comment_response_reconciles_without_duplicate(self):
+        class LostComment(ControlledLinear):
+            def query(self, document, variables):
+                result = super().query(document, variables)
+                if "mutation ImportReviewComment" in document:
+                    raise StoreError("Lost comment response")
+                return result
+        with tempfile.TemporaryDirectory() as tmp:
+            client = LostComment()
+            store = LinearActionStore(client, "workspace", "team", Path(tmp) / "journal")
+            r = report()
+            import_batch(r, store)
+            observation = dict(r["source_records"][0])
+            observation["original_content"] = {"title": "Action: changed", "description": "new"}
+            first = store.review_source(observation)
+            second = store.review_source(observation)
+            self.assertEqual(first.outcome, "changed")
+            self.assertEqual(second, first)
+            self.assertEqual(len(client.comments), first.affected_actions)
+
+    def test_comment_failure_never_retries_uncertain_write(self):
+        class FailedComment(ControlledLinear):
+            attempts = 0
+            def query(self, document, variables):
+                if "mutation ImportReviewComment" in document:
+                    self.attempts += 1
+                    raise StoreError("Failed comment")
+                return super().query(document, variables)
+        with tempfile.TemporaryDirectory() as tmp:
+            client = FailedComment()
+            store = LinearActionStore(client, "workspace", "team", Path(tmp) / "journal")
+            r = report()
+            import_batch(r, store)
+            observation = dict(r["source_records"][0])
+            observation["original_content"] = {"title": "Action: changed", "description": "new"}
+            for _ in range(2):
+                with self.assertRaises(StoreError):
+                    store.review_source(observation)
+            self.assertEqual(client.attempts, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
-import contextlib
-import io
-import json
