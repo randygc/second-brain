@@ -66,10 +66,16 @@ class GoogleCalendarSource:
 
     def __init__(self, session):
         self.session = session
+        self._lifecycle_calendars = set()
 
-    def _get(self, url, params=None):
+    def _get(self, url, params=None, *, deleted_id=None):
         try:
             response = self.session.get(url, params=params, timeout=30)
+            if response.status_code == 410 and deleted_id is not None:
+                error = response.json().get("error", {})
+                reasons = [item.get("reason") for item in error.get("errors", [])]
+                if reasons == ["deleted"]:
+                    return {"id": deleted_id, "status": "cancelled", "deletion_evidence": "http410_deleted"}
             if response.status_code != 200:
                 raise SourceError(f"Google Calendar read failed (HTTP {response.status_code}); no complete report produced.")
             result = response.json()
@@ -80,6 +86,30 @@ class GoogleCalendarSource:
             raise
         except Exception as exc:
             raise SourceError("Google Calendar connection or authorization failed; no complete report produced.") from exc
+
+    def read_lifecycle(self, calendar_id: str, source_record_id: str) -> dict:
+        """GET the saved event/series identity; never infer deletion from absence."""
+        endpoint = BASE_URL + quote(calendar_id, safe="")
+        if calendar_id not in self._lifecycle_calendars:
+            metadata = self._get(endpoint, {"fields": "id"})
+            if metadata.get("id") != calendar_id:
+                raise SourceError("Calendar identity/access could not be verified; no deletion inferred.")
+            self._lifecycle_calendars.add(calendar_id)
+        event = self._get(endpoint + "/events/" + quote(source_record_id, safe=""),
+                          {"fields": "id,status,updated,recurringEventId"}, deleted_id=source_record_id)
+        if event.get("id") != source_record_id:
+            raise SourceError("Calendar lifecycle response has the wrong event identity.")
+        # The journal stores series IDs. A returned exception is not whole-series evidence.
+        if event.get("recurringEventId"):
+            raise SourceError("Received a recurring occurrence instead of the recorded source; no series deletion inferred.")
+        status = event.get("status")
+        if status not in {"confirmed", "tentative", "cancelled"}:
+            raise SourceError("Calendar lifecycle response has no recognized status.")
+        return {"source_type": "google_calendar", "calendar_id": calendar_id,
+                "source_record_id": source_record_id, "source_status": status,
+                "source_updated_at": event.get("updated"),
+                "deletion_evidence": (event.get("deletion_evidence", "calendar_cancelled")
+                                      if status == "cancelled" else None)}
 
     def read_window(self, calendar_id: str, start: date, days: int) -> CalendarWindow:
         endpoint = BASE_URL + quote(calendar_id, safe="")

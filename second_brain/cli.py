@@ -15,6 +15,7 @@ from .action_store import StoreError, import_one, select_title_action, plan_batc
 from .local_files import private_write
 from .extraction import title_action_text
 from .linear_store import LinearActionStore, LinearClient, destinations
+from .source_lifecycle import review_deleted_sources
 
 
 def main(argv=None) -> int:
@@ -53,8 +54,34 @@ def main(argv=None) -> int:
     batch.add_argument("--journal", type=Path, default=Path(".local/linear-imports.sqlite3"))
     batch.add_argument("--results-file", type=Path, default=Path(".local/import-batch-results.json"))
     batch.add_argument("--execute", action="store_true", help="Create missing actions; default is a local-only plan")
+    lifecycle = commands.add_parser("review-sources", help="Check imported Calendar identities for confirmed deletion/cancellation")
+    lifecycle.add_argument("--calendar-id", required=True)
+    lifecycle.add_argument("--token-file", type=Path, default=Path(".local/google-token.json"))
+    lifecycle.add_argument("--workspace-id", required=True)
+    lifecycle.add_argument("--team-id", required=True)
+    lifecycle.add_argument("--api-key-file", type=Path)
+    lifecycle.add_argument("--journal", type=Path, default=Path(".local/linear-imports.sqlite3"))
+    lifecycle.add_argument("--results-file", type=Path, default=Path(".local/source-review-results.json"))
+    lifecycle.add_argument("--max-records", type=int, default=100)
+    lifecycle.add_argument("--execute", action="store_true", help="Post unresolved deletion reviews; default only checks and plans")
     args = parser.parse_args(argv)
     try:
+        if args.command == "review-sources":
+            if args.max_records < 1:
+                raise StoreError("--max-records must be positive.")
+            if args.execute and not args.api_key_file:
+                raise StoreError("--execute requires --api-key-file.")
+            client = LinearClient(args.api_key_file, request_budget=1000) if args.execute else None
+            store = LinearActionStore(client, args.workspace_id, args.team_id, args.journal)
+            session = authorized_session(args.token_file)
+            try:
+                result = review_deleted_sources(GoogleCalendarSource(session), store, args.calendar_id,
+                                                execute=args.execute, limit=args.max_records)
+            finally:
+                session.close()
+            private_write(args.results_file, json.dumps(result, ensure_ascii=False, indent=2) + "\n")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 2 if result["status"] != "complete" else 0
         if args.command == "auth":
             authorize(args.client_secrets, args.token_file, args.include_shared)
             print(f"Read-only credentials saved locally to {args.token_file}.")

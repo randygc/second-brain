@@ -226,6 +226,24 @@ class LinearActionStore:
         db.commit()
         return db
 
+    def imported_sources(self, calendar_id: str) -> list[dict]:
+        """Known source identities for this destination, independent of date windows."""
+        if not self.journal_path.exists():
+            return []
+        destination = json.dumps(["linear", self.workspace_id, self.team_id])
+        db = self._journal()
+        try:
+            sources = {}
+            for snapshot, in db.execute("SELECT snapshot FROM imports WHERE destination=?", (destination,)):
+                p = json.loads(snapshot)["provenance"]
+                if p.get("source_type") == "google_calendar" and p.get("calendar_id") == calendar_id:
+                    sources.setdefault(source_key(p), p)
+            return list(sources.values())
+        except (sqlite3.Error, ValueError, KeyError, TypeError) as exc:
+            raise StoreError("Cannot read known source identities from the import journal. Preserve the journal.") from exc
+        finally:
+            db.close()
+
     def review_source(self, observation: dict) -> SourceReview:
         """Append evidence without changing the destination's editable fields."""
         destination = json.dumps(["linear", self.workspace_id, self.team_id])

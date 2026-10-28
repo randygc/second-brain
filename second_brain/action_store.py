@@ -37,6 +37,10 @@ class SourceReview:
 
 
 class ActionStore(Protocol):
+    def imported_sources(self, calendar_id: str) -> list[dict]:
+        """Known imported source identities for this destination and calendar."""
+        ...
+
     def review_source(self, observation: dict) -> SourceReview:
         """Append unresolved evidence for changed sources; never replace actions."""
         ...

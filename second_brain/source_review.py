@@ -23,6 +23,15 @@ def review_comments(originals: list[dict], observation: dict) -> list[str | None
     one original and one current action retains its title slot across renames.
     Ambiguous correspondence is presented for review, never asserted as removal.
     """
+    if observation.get("source_status") in {"cancelled", "deleted"}:
+        timestamp = observation.get("source_updated_at") or "Unavailable in source"
+        scope = "recurring series" if any(d["provenance"].get("recurring_series_id") for d in originals) else "event"
+        return [("## Calendar source deleted or cancelled — unresolved\n\n"
+                 f"Calendar source updated: {timestamp}\n\n"
+                 f"Google Calendar explicitly reports that the source {scope} was deleted or cancelled.\n\n"
+                 + d["title"] + ("\n\n" + d["details"] if d["details"] else "")
+                 + "\n\nReview whether this Linear issue is still needed. Its content, provenance and workflow status have been retained. No automatic deletion or resolution was performed.")
+                for d in originals]
     raw = observation.get("original_content")
     available = raw is not None and matches_title(raw.get("title", ""))
     current = extract_actions(raw["title"], raw.get("description", "")) if available else []
