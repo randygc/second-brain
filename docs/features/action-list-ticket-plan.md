@@ -40,6 +40,14 @@ Blocked by: 4.
 
 Support the original inclusive start-date scope, including future events, with full pagination, bounded recurrence handling, resumable destination writes, deduplication, and accurate reporting. Settle series eligibility and recorded-date selection. Preserve the five-day validation/report mode. Deleted-source detection can land separately through ticket 5.
 
+October 27 production requirement: the first broad import must support an explicit, user-selected start/end range spanning several months. Process bounded batches with durable progress and resume, retaining the same import journal and identities used by five-day imports. Report aggregate and per-day outcomes.
+
+## 7. Scheduled daily ingestion (planned; not yet published)
+
+Blocked by: broad-range import.
+
+After the initial bulk import, run saved ingestion code daily to discover new actions, with safe catch-up after missed or failed runs. Reuse shared parsing, source identity, change review, and the replaceable action store. Define discovery of newly created backdated/future-dated records, checkpoint persistence, execution time/timezone, hosting cost, and credential renewal before enabling the schedule. Do not equate new actions with events scheduled today. No scheduler is enabled by this plan update.
+
 ## Published issues
 
 - #2: repeatable five-day extraction/report
@@ -49,4 +57,4 @@ Support the original inclusive start-date scope, including future events, with f
 - #6: deleted/cancelled sources
 - #7: broader import
 
-The parent spec, child ticket bodies/titles, and native dependencies now reflect the approved Linear-ingestion plan. All six child issues retain ready-for-agent.
+The October 13 plan was published in the six child issues above. The October 27 broad-range clarification and daily-ingestion follow-on are recorded locally and have not yet been published to GitHub.

@@ -15,6 +15,14 @@ The current local [spec](features/action-list-iteration-1-spec.md) and [approved
 
 The six accepted parsing examples and original provenance requirements remain in scope. The accepted sample window is Randy Chevalier basic, September 28–October 2, 2026. A repeatable five-day report comes first; Linear imports follow in narrow slices.
 
+## Production import workflow
+
+Requirement recorded October 27, 2026: perform an initial bulk import spanning a user-selected range of several months, then run scheduled daily imports for newly added actions. Keep the five-day report as a validation tool.
+
+Extend GitHub issue #7's broader-import scope with explicit start/end dates, bounded batches, durable progress, safe resume, and aggregate/per-day outcomes. Bulk and daily runs must share source identities, parsing rules, the action-store adapter, and the persistent import journal so overlaps do not create duplicates or overwrite user edits.
+
+Follow bulk import with a separate daily-ingestion slice. Define how daily runs discover newly created records dated in the past or future, recover missed runs, and retain durable synchronization state before enabling a scheduler. Scanning only today's scheduled events would miss backdated entries. The daily discovery strategy, execution time/timezone, hosting, and credential renewal remain open; preserve minimum cost and least privilege. No scheduled job has been enabled.
+
 ## Later iterations
 
 - Complete source-change review/reconciliation using Linear's native editing/deletion workflows. Native editing and deletion supersede the former priority to build custom controls.

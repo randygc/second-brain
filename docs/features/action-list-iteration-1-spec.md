@@ -84,6 +84,12 @@ Deliver small end-to-end slices, starting with repeatable five-day extraction, f
 - Linear's current free limits and API restrictions are summarized in the action-store design notes; verify current capacity and respect returned API budgets during implementation.
 - Native Linear editing/deletion replaces the former iteration-2 custom-control priority. Completing automated source-change reconciliation remains future work.
 
+## Production workflow clarification — October 27, 2026
+
+The intended production workflow is an initial bulk import for an explicit date range of several months, followed by scheduled daily imports for newly added actions. Five-day previews remain a small validation mode. Broad-range import extends issue #7; daily scheduling is a subsequent slice, outside the currently implemented five-day scope.
+
+Both modes reuse source identity, shared extraction, the replaceable action store, and durable import state. Broad runs require bounded work and resumable progress. Daily discovery must account for new records whose scheduled dates are in the past or future and catch up after missed runs; its discovery strategy and operational schedule remain to be specified. No production scheduler has been configured.
+
 ## Source-change comment refinement — October 27, 2026
 
 Present updated extracted action names and formatted descriptions directly in action-specific review comments, with the source update timestamp. If a former independent action no longer has a corresponding action because it was removed or became supporting content, explain these possibilities and suggest manual deletion. Preserve the issue and its user-managed fields. Do not infer correspondence from shifted action ordinals; uncertain matches require review without a deletion recommendation. Keep source snapshots in private import evidence rather than displaying raw JSON in review comments.
