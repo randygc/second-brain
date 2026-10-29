@@ -1,11 +1,17 @@
 # Action item consolidator: command guide
 
-Run commands from the project root, using `.venv/bin/python -m second_brain`. Google Calendar is read-only. Linear holds the action items and their user-managed workflow. No daily schedule has been enabled.
+Run commands from the project root, using `.venv/bin/python -m second_brain`. Google Calendar is read-only. Linear holds the action items and their user-managed workflow. For configurable scheduling and the shared successful-run checkpoint, see [scheduled ingestion](scheduled-ingestion.md).
+
+For routine scheduled or manual combined execution, use `run --config .local/runner.json`. The lower-level commands remain useful for setup, previews and targeted troubleshooting.
 
 ## Commands at a glance
 
 | Command | Purpose | External writes |
 | --- | --- | --- |
+| `run` | Execute the configured fresh preview, import and deletion review with shared checkpoint/lock. `--scheduled` skips when not due. | Creates missing issues and posts relevant review comments. |
+| `schedule-install` | Enable a native macOS LaunchAgent after a successful manual consolidated run. | Local scheduler configuration only. |
+| `schedule-status` | Check whether the LaunchAgent is loaded. | None. |
+| `schedule-uninstall` | Disable/remove the LaunchAgent while preserving state. | Local scheduler configuration only. |
 | `auth` | Authorize Google Calendar access and save a local token. | Grants read-only access; saves credentials locally. |
 | `preview` | Read Calendar, extract actions, and write private HTML/JSON reports. | None. |
 | `candidates` | List title-defined actions eligible for the original single-action import. | None; reads a local report. |

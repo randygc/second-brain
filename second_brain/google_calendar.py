@@ -87,6 +87,13 @@ class GoogleCalendarSource:
         except Exception as exc:
             raise SourceError("Google Calendar connection or authorization failed; no complete report produced.") from exc
 
+    def calendar_timezone(self, calendar_id: str) -> str:
+        endpoint = BASE_URL + quote(calendar_id, safe="")
+        metadata = self._get(endpoint, {"fields": "id,timeZone"})
+        if metadata.get("id") != calendar_id or not isinstance(metadata.get("timeZone"), str):
+            raise SourceError("Calendar identity/timezone could not be verified.")
+        return metadata["timeZone"]
+
     def read_lifecycle(self, calendar_id: str, source_record_id: str) -> dict:
         """GET the saved event/series identity; never infer deletion from absence."""
         endpoint = BASE_URL + quote(calendar_id, safe="")

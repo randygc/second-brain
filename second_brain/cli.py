@@ -16,6 +16,8 @@ from .local_files import private_write
 from .extraction import title_action_text
 from .linear_store import LinearActionStore, LinearClient, destinations
 from .source_lifecycle import review_deleted_sources
+from .runner import RunnerError, execute_config
+from .scheduler import install, uninstall, schedule_status
 
 
 def main(argv=None) -> int:
@@ -65,8 +67,25 @@ def main(argv=None) -> int:
     lifecycle.add_argument("--results-file", type=Path, default=Path(".local/source-review-results.json"))
     lifecycle.add_argument("--max-records", type=int, default=100)
     lifecycle.add_argument("--execute", action="store_true", help="Post unresolved deletion reviews; default only checks and plans")
+    consolidated = commands.add_parser("run", help="Run the configured import and deletion review with checkpoint/lock")
+    consolidated.add_argument("--config", type=Path, default=Path(".local/runner.json"))
+    consolidated.add_argument("--scheduled", action="store_true", help="Skip when the configured schedule is not due")
+    for name, help_text in [("schedule-install", "Install and enable the native macOS scheduler after manual verification"),
+                            ("schedule-uninstall", "Disable/remove the native scheduler; retain configuration and state")]:
+        sub = commands.add_parser(name, help=help_text)
+        sub.add_argument("--config", type=Path, default=Path(".local/runner.json"))
+    commands.add_parser("schedule-status", help="Check whether the native macOS scheduler is loaded")
     args = parser.parse_args(argv)
     try:
+        if args.command == "run":
+            result = execute_config(args.config, scheduled=args.scheduled)
+            print(json.dumps(result, indent=2))
+            return 2 if result["status"] == "failed" else 0
+        if args.command in {"schedule-install", "schedule-uninstall", "schedule-status"}:
+            result = (schedule_status() if args.command == "schedule-status" else
+                      install(args.config) if args.command == "schedule-install" else uninstall(args.config))
+            print(json.dumps(result, indent=2))
+            return 0
         if args.command == "review-sources":
             if args.max_records < 1:
                 raise StoreError("--max-records must be positive.")
@@ -144,7 +163,7 @@ def main(argv=None) -> int:
             print(f'{row["date"]}: {row["matching_events"]} matching events; {row["action_items"]} actions')
         print(f"Report: {(args.output_dir / 'report.html').resolve()}")
         return 0
-    except (SourceError, StoreError, OSError) as exc:
+    except (SourceError, StoreError, RunnerError, OSError) as exc:
         suffix = ("Authorization did not complete."
                   if args.command == "auth" else
                   "No successful report for this run. Any prior report is unchanged or stale."

@@ -46,7 +46,7 @@ Authorization opens Google's browser page and a temporary loopback callback on `
 
 By default, preview searches the start date plus four calendar dates; pass `--end-date` for an inclusive bounded range, using the calendar's timezone, including daylight-saving transitions. It retrieves all pages before writing a successful report. It counts matching occurrences by scheduled start date; a recurring series contributes its actions only on its earliest matching occurrence in the window. Matching events with no actions are still counted and shown. Missing creation timestamps stay null, with a warning.
 
-Failures return exit code 1 and do not publish partial retrieval as an empty success. A previous report may remain on disk; the error explicitly identifies it as stale. Preview output paths are local, and preview performs no destination writes. Imports require an explicit execute command; no scheduled runs are enabled.
+Failures return exit code 1 and do not publish partial retrieval as an empty success. A previous report may remain on disk; the error explicitly identifies it as stale. Preview output paths are local, and preview performs no destination writes. Imports require an explicit execute command; configurable native macOS scheduling is described in the [scheduled ingestion guide](docs/scheduled-ingestion.md).
 
 ## Modules and verification
 
@@ -55,8 +55,10 @@ Failures return exit code 1 and do not publish partial retrieval as an empty suc
 - `google_calendar` implements raw REST pagination, timezone-aware reads, an offline JSON replay adapter, and Google-library authentication.
 - `report` renders escaped static HTML and portable JSON; Linear ingestion consumes the application output without depending on presentation.
 
-Synthetic fixtures preserve the structure and expected counts of the six supplied examples while excluding personal details and real links. Example 6’s explanatory end-of-item asterisks are not production delimiters. Tests cover application behavior, raw JSON/HTML line fidelity, recurrence, independent identical actions, timezone boundaries, DST, pagination failures, safe rendering, and repeatable local output. The HTTP contract tests use an injected session; live Google login and real-calendar line verification passed on October 26, 2026 after dependency installation and authorization. The September 28–October 2 live run produced 9 matching occurrences and 14 actions, including Example 6’s seven actions and four double-dash bullets. The current suite has 73 passing tests, including date-range imports and source-deletion reviews.
+Synthetic fixtures preserve the structure and expected counts of the six supplied examples while excluding personal details and real links. Example 6’s explanatory end-of-item asterisks are not production delimiters. Tests cover application behavior, raw JSON/HTML line fidelity, recurrence, independent identical actions, timezone boundaries, DST, pagination failures, safe rendering, and repeatable local output. The HTTP contract tests use an injected session; live Google login and real-calendar line verification passed on October 26, 2026 after dependency installation and authorization. The September 28–October 2 live run produced 9 matching occurrences and 14 actions, including Example 6’s seven actions and four double-dash bullets. The current suite has 90 passing tests, including date-range imports and source-deletion reviews.
 
 Feature scope: [spec](docs/features/action-list-iteration-1-spec.md), [ticket plan](docs/features/action-list-ticket-plan.md), [action-store design](docs/features/action-store-design.md).
 
 For confirmed Calendar deletions/cancellations, run the separate [source-deletion review](docs/source-deletion-review.md) step. It checks saved event/series identities, posts unresolved Linear comments only with reliable evidence, and never deletes issues or treats absence from a date window as deletion.
+
+Use the shared [scheduled/manual runner](docs/scheduled-ingestion.md) for deterministic unattended imports, catch-up, checkpointing, locking and failure notifications.

@@ -23,10 +23,15 @@ Extend GitHub issue #7's broader-import scope with explicit start/end dates, bou
 
 Follow bulk import with a separate daily-ingestion slice. Define how daily runs discover newly created records dated in the past or future, recover missed runs, and retain durable synchronization state before enabling a scheduler. Scanning only today's scheduled events would miss backdated entries. The daily discovery strategy, execution time/timezone, hosting, and credential renewal remain open; preserve minimum cost and least privilege. No scheduled job has been enabled.
 
+## Scheduled ingestion iteration
+
+The October 28 approved design uses a deterministic Python consolidated runner and per-user macOS scheduling: daily 06:00 America/Los_Angeles by default or a configurable elapsed interval; configurable five-calendar-day overlap from the last successful checkpoint through the current Calendar date; missed-run catch-up at wake/login; a shared lock; failure notifications; and 30-day disposable artifact retention. Import and deletion review must both succeed before checkpoint advancement. See [scheduled ingestion](scheduled-ingestion.md).
+
 ## Later iterations
 
 - Complete source-change review/reconciliation using Linear's native editing/deletion workflows. Native editing and deletion supersede the former priority to build custom controls.
 - Add a recurring indicator to each action imported from a recurring series.
+- Add an agent wrapper and Slack UI, including communication of failed Python script executions through Slack; explore its requirements after the current scheduling iteration.
 - Add Slack, email, and eventually audio source connectors; define source-specific selection, permissions, transcription, and additional parsing as needed.
 - Research answers to questions, including embedded questions and supporting bullets; define presentation and approval behavior.
 - Consider source filtering and explicit combining of related actions; never automatically merge by matching text.
