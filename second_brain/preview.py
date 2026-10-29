@@ -1,4 +1,4 @@
-"""The application interface: one complete five-day extraction, or an error."""
+"""The application interface: one complete bounded-date extraction, or an error."""
 
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timedelta
@@ -45,15 +45,19 @@ def _scheduled(raw: dict, zone: ZoneInfo) -> tuple[date, str]:
     raise SourceError("A matching Calendar event has no scheduled start.")
 
 
-def preview(source: CalendarSource, calendar_id: str, start: date) -> dict:
+def preview(source: CalendarSource, calendar_id: str, start: date, end: date | None = None) -> dict:
     """Fetch before producing output; callers never receive a partial report."""
     try:
-        window = source.read_window(calendar_id, start, 5)
+        end = end if end is not None else start + timedelta(days=4)
+        duration = (end - start).days + 1
+        if not 1 <= duration <= 3660:
+            raise SourceError("Choose an inclusive date range between 1 and 3,660 days.")
+        window = source.read_window(calendar_id, start, duration)
         zone = ZoneInfo(window.timezone)
         days = {(start + timedelta(days=i)).isoformat(): {
             "date": (start + timedelta(days=i)).isoformat(),
             "matching_events": 0, "action_items": 0,
-        } for i in range(5)}
+        } for i in range(duration)}
         matching = []
         observations = []
         seen_occurrences = set()
@@ -123,7 +127,7 @@ def preview(source: CalendarSource, calendar_id: str, start: date) -> dict:
             "status": "complete", "calendar_id": window.calendar_id,
             "calendar_name": window.calendar_name, "timezone": window.timezone,
             "start_date": start.isoformat(),
-            "end_date_inclusive": (start + timedelta(days=4)).isoformat(),
+            "end_date_inclusive": end.isoformat(),
             "daily_stats": list(days.values()), "source_records": records,
             # Nonmatching records retain only a content fingerprint and metadata,
             # allowing review of renamed known sources without storing unrelated text.

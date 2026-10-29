@@ -1,6 +1,7 @@
 """Destination-independent single-action and bounded batch ingestion."""
 
 from dataclasses import asdict, dataclass
+from datetime import date, timedelta
 import json
 from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
@@ -56,7 +57,7 @@ class ActionStore(Protocol):
 
 def select_title_action(report: dict, source_record_id: str) -> ActionDraft:
     if not isinstance(report, dict) or report.get("status") != "complete":
-        raise StoreError("Only a complete five-day extraction can be imported.")
+        raise StoreError("Only a complete extraction can be imported.")
     if not isinstance(report.get("actions"), list) or any(not isinstance(a, dict) for a in report["actions"]):
         raise StoreError("Invalid extraction actions; regenerate the preview before importing.")
     selected = [a for a in report.get("actions", []) if a.get("source_record_id") == source_record_id]
@@ -93,13 +94,18 @@ def plan_batch(report: dict) -> list[ActionDraft]:
     slots. Source review holds changed snapshots for explicit resolution.
     """
     if not isinstance(report, dict) or report.get("status") != "complete":
-        raise StoreError("Only a complete five-day extraction can be imported.")
+        raise StoreError("Only a complete extraction can be imported.")
     try:
         actions = report["actions"]
         if not isinstance(actions, list) or report["action_count"] != len(actions):
             raise StoreError("Extraction action count is inconsistent.")
-        if len(report["daily_stats"]) != 5 or sum(d["action_items"] for d in report["daily_stats"]) != len(actions):
-            raise StoreError("Five-day extraction statistics are inconsistent.")
+        start = date.fromisoformat(report["start_date"])
+        end = date.fromisoformat(report["end_date_inclusive"])
+        duration = (end - start).days + 1
+        if (not 1 <= duration <= 3660
+                or [d["date"] for d in report["daily_stats"]] != [(start + timedelta(days=i)).isoformat() for i in range(duration)]
+                or sum(d["action_items"] for d in report["daily_stats"]) != len(actions)):
+            raise StoreError("Extraction date boundaries or daily statistics are inconsistent.")
         drafts, seen, groups = [], set(), {}
         for action in actions:
             p = {key: action.get(key) for key in ["source_type", "calendar_id", "source_record_id", "source_event_id",
@@ -138,7 +144,7 @@ def plan_batch(report: dict) -> list[ActionDraft]:
         if any(sorted(g["ordinals"]) != list(range(1, len(g["ordinals"]) + 1)) for g in groups.values()):
             raise StoreError("Source action ordinals are incomplete; regenerate the full preview.")
         return drafts
-    except (KeyError, TypeError, AttributeError) as exc:
+    except (KeyError, TypeError, AttributeError, ValueError) as exc:
         raise StoreError("Invalid batch extraction payload; regenerate preview before importing.") from exc
 
 
@@ -161,7 +167,7 @@ def import_batch(report: dict, store: ActionStore) -> dict:
             observation = observed.get(source_key(draft.provenance))
             if observation and revision(observation) != revision(draft.provenance):
                 raise StoreError("Source observation and extracted actions disagree; regenerate preview.")
-    except (KeyError, TypeError, AttributeError) as exc:
+    except (KeyError, TypeError, AttributeError, ValueError) as exc:
         raise StoreError("Invalid source observations; regenerate preview.") from exc
     for draft in drafts:
         observed.setdefault(source_key(draft.provenance), draft.provenance)

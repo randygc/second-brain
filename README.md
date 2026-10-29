@@ -1,8 +1,10 @@
 # Second Brain
 
-Read-only Google Calendar action extraction and single-action or complete five-day ingestion into Linear through a replaceable action-store interface. Preview never writes to Linear or modifies Calendar events. Both `import-one` and `import-batch` default to a local-only plan and require `--execute` to create missing issues.
+Read-only Google Calendar action extraction and single-action or bounded date-range ingestion into Linear through a replaceable action-store interface. Preview never writes to Linear or modifies Calendar events. Both `import-one` and `import-batch` default to a local-only plan and require `--execute` to create missing issues.
 
-For credentials, single-action selection, and import identity, see [Linear setup](docs/linear-setup.md). For full-set imports, daily/per-action outcomes, partial failures, and safe reruns, see [five-day batch import](docs/batch-import.md).
+For the command reference and normal operating workflow, see the [action item consolidator CLI guide](docs/cli-guide.md).
+
+For credentials, single-action selection, and import identity, see [Linear setup](docs/linear-setup.md). For full-set imports, daily/per-action outcomes, partial failures, and safe reruns, see [batch import](docs/batch-import.md).
 
 ## Run without credentials or dependencies
 
@@ -42,18 +44,18 @@ python3 -m venv .venv
 
 Authorization opens Google's browser page and a temporary loopback callback on `127.0.0.1`. Tokens stay local. Default event permission is read-only for calendars you own; calendar-property read access supplies the actual timezone. Only the configured calendar is fetched. Use `auth --include-shared` only if selecting a calendar you do not own; this requests broader read-only event access. No event-write permission is requested.
 
-Every run searches the start date plus four calendar dates, using the calendar's timezone, including daylight-saving transitions. It retrieves all pages before writing a successful report. It counts matching occurrences by scheduled start date; a recurring series contributes its actions only on its earliest matching occurrence in the window. Matching events with no actions are still counted and shown. Missing creation timestamps stay null, with a warning.
+By default, preview searches the start date plus four calendar dates; pass `--end-date` for an inclusive bounded range, using the calendar's timezone, including daylight-saving transitions. It retrieves all pages before writing a successful report. It counts matching occurrences by scheduled start date; a recurring series contributes its actions only on its earliest matching occurrence in the window. Matching events with no actions are still counted and shown. Missing creation timestamps stay null, with a warning.
 
-Failures return exit code 1 and do not publish partial retrieval as an empty success. A previous report may remain on disk; the error explicitly identifies it as stale. All output paths are local; there are no destination writes, fees, or scheduled runs.
+Failures return exit code 1 and do not publish partial retrieval as an empty success. A previous report may remain on disk; the error explicitly identifies it as stale. Preview output paths are local, and preview performs no destination writes. Imports require an explicit execute command; no scheduled runs are enabled.
 
 ## Modules and verification
 
 - `preview` is the application interface used by both CLI runs and behavioral tests. It accepts a source adapter and returns a complete report or an error.
 - `extraction` applies shared action-line rules to normalized source content. Raw source content is preserved separately. Explicit newlines, HTML breaks/blocks, lists, emphasis, and links are handled without inferring actions from sentence boundaries.
 - `google_calendar` implements raw REST pagination, timezone-aware reads, an offline JSON replay adapter, and Google-library authentication.
-- `report` renders escaped static HTML and portable JSON; future Linear ingestion can consume the application output without depending on presentation.
+- `report` renders escaped static HTML and portable JSON; Linear ingestion consumes the application output without depending on presentation.
 
-Synthetic fixtures preserve the structure and expected counts of the six supplied examples while excluding personal details and real links. Example 6’s explanatory end-of-item asterisks are not production delimiters. Tests cover application behavior, raw JSON/HTML line fidelity, recurrence, independent identical actions, timezone boundaries, DST, pagination failures, safe rendering, and repeatable local output. The HTTP contract tests use an injected session; live Google login and real-calendar line verification passed on October 26, 2026 after dependency installation and authorization. The September 28–October 2 live run produced 9 matching occurrences and 14 actions, including Example 6’s seven actions and four double-dash bullets. All 18 tests pass.
+Synthetic fixtures preserve the structure and expected counts of the six supplied examples while excluding personal details and real links. Example 6’s explanatory end-of-item asterisks are not production delimiters. Tests cover application behavior, raw JSON/HTML line fidelity, recurrence, independent identical actions, timezone boundaries, DST, pagination failures, safe rendering, and repeatable local output. The HTTP contract tests use an injected session; live Google login and real-calendar line verification passed on October 26, 2026 after dependency installation and authorization. The September 28–October 2 live run produced 9 matching occurrences and 14 actions, including Example 6’s seven actions and four double-dash bullets. The current suite has 73 passing tests, including date-range imports and source-deletion reviews.
 
 Feature scope: [spec](docs/features/action-list-iteration-1-spec.md), [ticket plan](docs/features/action-list-ticket-plan.md), [action-store design](docs/features/action-store-design.md).
 

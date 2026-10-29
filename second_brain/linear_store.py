@@ -100,7 +100,7 @@ def issue_description(draft: ActionDraft) -> str:
     p = draft.provenance
     flags = p.get("extracted_payload", {}).get("review_flags", [])
     review = "\n- Review flags (unresolved): " + ", ".join(flags) if flags else ""
-    return (display_details(draft) + "\n\n---\n## Import provenance\n\n"
+    return (rendered_details(draft) + "\n\n---\n## Import provenance\n\n"
             f"- Source: {p['source_type']}\n- Scheduled calendar date: {p['scheduled_date']}\n"
             f"- Original source creation: {p.get('source_created_at') or 'Unavailable (not substituted)'}\n"
             f"- Source modification: {p.get('source_updated_at') or 'Unavailable'}\n"
@@ -110,13 +110,27 @@ def issue_description(draft: ActionDraft) -> str:
 
 def display_title(draft: ActionDraft) -> str:
     # Full text is preserved in the description and portable extraction payload.
-    title = draft.title.strip()
+    title = " ".join(draft.title.split())
     return title if len(title) <= 255 else title[:252] + "..."
 
 
 def display_details(draft: ActionDraft) -> str:
     return ("## Full action text\n\n" + draft.title + "\n\n" + draft.details
             if len(draft.title) > 255 else draft.details)
+
+
+def rendered_details(draft: ActionDraft) -> str:
+    """Protect layouts Linear rewrites, retaining readable exact text in a fence.
+
+    Two-space nested lists become flat lists in Linear; four-space standalone
+    bullets become code blocks. Ordered markers and adjacent emphasis are also
+    rewritten. Use a literal block for these structures instead of losing them.
+    """
+    import re
+    details = display_details(draft)
+    if re.search(r"(?m)^(?: +(?:[*+-]|\d+[.)]) | *\d+[.)] )", details) or "**" in details:
+        return _fence(details)
+    return details
 
 
 def description_matches(description: str, draft: ActionDraft) -> bool:
@@ -138,7 +152,7 @@ def description_matches(description: str, draft: ActionDraft) -> bool:
             value = re.sub(r"\]\(<([^>\n]+)>\)", r"](\1)", value)
             value = re.sub(r"(?m)^( *)\\--", r"\1--", value)
             return re.sub(r"(?m)^( *)[*+-] ", r"\1- ", value)
-        return (canonical(details) == canonical(display_details(draft))
+        return (canonical(details) == canonical(rendered_details(draft))
                 and draft.import_identity in metadata
                 and match is not None
                 and json.loads(match.group(2)) == draft.provenance)

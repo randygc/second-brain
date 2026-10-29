@@ -25,9 +25,10 @@ def main(argv=None) -> int:
     auth.add_argument("--client-secrets", type=Path, required=True)
     auth.add_argument("--token-file", type=Path, default=Path(".local/google-token.json"))
     auth.add_argument("--include-shared", action="store_true", help="Also authorize event reads from calendars you do not own")
-    extract = commands.add_parser("preview", help="Extract five calendar days and write a local report")
+    extract = commands.add_parser("preview", help="Extract a bounded date range (default five days) and write a local report")
     extract.add_argument("--calendar-id", required=True)
     extract.add_argument("--start-date", type=date.fromisoformat, required=True)
+    extract.add_argument("--end-date", type=date.fromisoformat, help="Inclusive end date; defaults to start plus four days")
     extract.add_argument("--output-dir", type=Path, required=True)
     inputs = extract.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--token-file", type=Path)
@@ -45,7 +46,7 @@ def main(argv=None) -> int:
     single.add_argument("--api-key-file", type=Path)
     single.add_argument("--journal", type=Path, default=Path(".local/linear-imports.sqlite3"))
     single.add_argument("--execute", action="store_true", help="Actually write the selected issue; default is a local-only plan")
-    batch = commands.add_parser("import-batch", help="Plan or execute the complete five-day extraction")
+    batch = commands.add_parser("import-batch", help="Plan or execute a complete bounded extraction")
     batch.add_argument("--report", type=Path, required=True)
     batch.add_argument("--workspace-id", required=True)
     batch.add_argument("--team-id", required=True)
@@ -130,11 +131,11 @@ def main(argv=None) -> int:
             return 0
         if args.input_json:
             source = JSONCalendarSource(args.input_json)
-            result = preview(source, args.calendar_id, args.start_date)
+            result = preview(source, args.calendar_id, args.start_date, args.end_date)
         else:
             session = authorized_session(args.token_file)
             try:
-                result = preview(GoogleCalendarSource(session), args.calendar_id, args.start_date)
+                result = preview(GoogleCalendarSource(session), args.calendar_id, args.start_date, args.end_date)
             finally:
                 session.close()
         write_report(result, args.output_dir)
