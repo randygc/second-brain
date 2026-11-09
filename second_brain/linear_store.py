@@ -101,8 +101,10 @@ def issue_description(draft: ActionDraft) -> str:
     flags = p.get("extracted_payload", {}).get("review_flags", [])
     review = "\n- Review flags (unresolved): " + ", ".join(flags) if flags else ""
     return (rendered_details(draft) + "\n\n---\n## Import provenance\n\n"
-            f"- Source: {p['source_type']}\n- Scheduled calendar date: {p['scheduled_date']}\n"
-            f"- Original source creation: {p.get('source_created_at') or 'Unavailable (not substituted)'}\n"
+            f"- Source: {p['source_type']}\n"
+            + (f"- Scheduled calendar date: {p['scheduled_date']}\n" if "scheduled_date" in p else "")
+            + (f"- Source link: {p['source_url']}\n" if p.get("source_url") else "")
+            + f"- Original source creation: {p.get('source_created_at') or 'Unavailable (not substituted)'}\n"
             f"- Source modification: {p.get('source_updated_at') or 'Unavailable'}\n"
             f"- Import identity: {draft.import_identity}{review}\n\n"
             "Original source content and portable metadata:\n\n" + _fence(json.dumps(p, ensure_ascii=False, indent=2), "json"))
@@ -333,8 +335,7 @@ class LinearActionStore:
             for prior, in db.execute("SELECT snapshot FROM imports WHERE destination=?", (destination,)):
                 p = json.loads(prior)["provenance"]
                 current = draft.provenance
-                keys = ["source_type", "calendar_id", "source_record_id"]
-                if all(p.get(k) == current.get(k) for k in keys) and p.get("original_content") != current.get("original_content"):
+                if source_key(p) == source_key(current) and p.get("original_content") != current.get("original_content"):
                     raise StoreError("Source content changed since its initial import. No new slots or replacements were created; run batch source review before importing changed content.")
             row = db.execute("SELECT issue_id, snapshot FROM imports WHERE destination=? AND import_identity=?", (destination, draft.import_identity)).fetchone()
             first_attempt = row is None

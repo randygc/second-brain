@@ -40,3 +40,7 @@ The October 28 approved design uses a deterministic Python consolidated runner a
 ## Decisions and open implementation details
 
 See [ADR 0001](adr/0001-replaceable-action-store.md) and [action-store design](features/action-store-design.md). Actual destination workspace/team, credential setup, identity metadata/state storage, and source-change evidence representation remain to be settled during implementation. Vercel and a separate action database are no longer selected architecture directions.
+
+## Slack agent iteration — review draft, October 29, 2026
+
+The design interview selected four thin slices: Hermes Slack additions/searches with deterministic commands and optional bounded model interpretation; shared deadlines and reminders; independent failure/recovery delivery; then proactive triage and an approval-gated research-and-draft workflow. See the [specification](features/slack-agent-spec.md), [implementation plan](features/slack-agent-plan.md), and [initial agent instructions](agents/slack-agent.md). These documents await owner review; this entry does not enable a runtime or change scheduling.
