@@ -11,6 +11,7 @@ from urllib.request import Request
 from uuid import uuid4
 
 from .action_store import ActionDraft, ImportResult, SourceReview, StoreError
+from .action_search import ActionSummary
 from .provenance import source_key, revision, fingerprint
 from .source_review import REVIEW_FORMAT, review_comments, comment_matches
 
@@ -385,3 +386,40 @@ class LinearActionStore:
             raise StoreError("Cannot update the local import journal. Preserve it; do not switch journals or retry creation blindly.") from exc
         finally:
             db.close()
+
+
+class LinearActionReader:
+    """Fetch every team page or fail; never present partial data as complete."""
+    def __init__(self, store):
+        self.store = store
+
+    def list_actions(self):
+        self.store._destination()
+        result, cursor, seen, identities = [], None, set(), set()
+        document = '''query SlackActions($team: ID!, $after: String) {
+          issues(first: 50, after: $after, includeArchived: true, filter: {team: {id: {eq: $team}}}) {
+            nodes { id identifier title description url dueDate archivedAt team { id } state { name type } }
+            pageInfo { hasNextPage endCursor }
+          }
+        }'''
+        while True:
+            data = self.store.client.query(document, {"team": self.store.team_id, "after": cursor})
+            try:
+                page = data["issues"]
+                for node in page["nodes"]:
+                    if node["team"]["id"] != self.store.team_id or node["id"] in identities:
+                        raise StoreError("Conflicting Linear search identities; retry the complete search.")
+                    identities.add(node["id"])
+                    details = (node["description"] or "").rsplit("\n\n---\n## Import provenance\n", 1)[0]
+                    result.append(ActionSummary(node["id"], node["identifier"], node["title"], details,
+                                                node["state"]["name"], node["state"]["type"], node["url"],
+                                                node["dueDate"], bool(node["archivedAt"])))
+                info = page["pageInfo"]
+                if not info["hasNextPage"]:
+                    return result
+                cursor = info["endCursor"]
+                if not cursor or cursor in seen:
+                    raise StoreError("Incomplete Linear search pagination; no partial results returned.")
+                seen.add(cursor)
+            except (KeyError, TypeError, AttributeError):
+                raise StoreError("Incomplete Linear search response; no partial results returned.") from None

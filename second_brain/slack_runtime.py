@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 from .action_store import StoreError
-from .action_search import LinearActionReader
+from .linear_store import LinearActionReader
 from .linear_store import LinearActionStore, LinearClient
 from .slack_commands import SlackCommands, SlackPolicy
 

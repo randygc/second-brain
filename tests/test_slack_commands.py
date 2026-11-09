@@ -1,11 +1,14 @@
 import json
 from pathlib import Path
 import tempfile
+import threading
+import sqlite3
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from second_brain.action_store import ImportResult, StoreError
-from second_brain.action_search import ActionSummary, LinearActionReader
+from second_brain.action_search import ActionSummary
+from second_brain.linear_store import LinearActionReader
 from second_brain.slack_commands import SlackCommands, SlackPolicy, parse_command
 from second_brain.linear_store import LinearActionStore
 from test_import import ControlledLinear
@@ -144,9 +147,67 @@ class SlackCommandsTests(unittest.TestCase):
         self.app.receive(message('help'))
         backup = self.root/'backup'
         self.app.backup(backup)
-        restored = SlackCommands(POLICY, backup/self.app.path.name, self.factory)
+        generation = backup/json.loads((backup/'current.json').read_text())['generation']
+        restored = SlackCommands(POLICY, generation/self.app.path.name, self.factory)
         self.assertEqual(len(restored.outbox()), 1)
-        self.assertEqual((backup/self.app.path.name).stat().st_mode & 0o777, 0o600)
+        self.assertEqual((generation/self.app.path.name).stat().st_mode & 0o777, 0o600)
+
+    def test_backup_defers_during_uncertain_create_and_restore_keeps_uuid(self):
+        client = ControlledLinear()
+        client.lose_create_response = True
+        entered, release = threading.Event(), threading.Event()
+        fail_reads = [False]
+        original_query = client.query
+        def query(document, variables):
+            if 'mutation ImportAction' in document:
+                try:
+                    return original_query(document, variables)
+                finally:
+                    fail_reads[0] = True
+                    entered.set()
+                    if not release.wait(5):
+                        raise RuntimeError('Test worker was not released')
+            if 'query ImportedIssue' in document and fail_reads[0]:
+                raise StoreError('Confirmation temporarily unavailable')
+            return original_query(document, variables)
+        client.query = query
+        store = LinearActionStore(client, 'workspace', 'team', self.root/'imports.sqlite3')
+        self.factory = lambda: (store, self.reader)
+        self.app = self.open()
+        self.app.receive(message('add Renew passport'))
+        worker = threading.Thread(target=self.app.work)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(5))
+            backup = self.root/'backup'
+            self.assertFalse(self.app.backup(backup))
+            self.assertFalse(backup.exists(), 'Backup must defer until the command finishes')
+        finally:
+            release.set()
+            worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertTrue(self.app.backup(backup))
+        generation = backup/json.loads((backup/'current.json').read_text())['generation']
+        restored_store = LinearActionStore(client, 'workspace', 'team', generation/'imports.sqlite3')
+        restored = SlackCommands(POLICY, generation/self.app.path.name, lambda:(restored_store,self.reader), clock=lambda:self.now+61)
+        fail_reads[0] = False
+        restored.work()
+        self.assertEqual(client.attempted_creates, 1)
+        self.assertTrue(any('Confirmed' in item['text'] for item in restored.outbox()))
+
+    def test_interrupted_backup_publication_keeps_complete_previous_generation(self):
+        self.app.receive(message('help'))
+        backup = self.root/'backup'
+        self.app.backup(backup)
+        before = (backup/'current.json').read_text()
+        self.app.receive(message('help', '102.000001'))
+        with patch('second_brain.local_files.private_write', side_effect=OSError('Publication interrupted')):
+            with self.assertRaises(OSError):
+                self.app.backup(backup)
+        self.assertEqual((backup/'current.json').read_text(), before)
+        generation = backup/json.loads(before)['generation']
+        restored = SlackCommands(POLICY, generation/self.app.path.name, self.factory)
+        self.assertEqual(len(restored.outbox()), 1)
 
     def test_model_outage_uses_one_probe_for_multiple_pending_requests(self):
         model = Mock(side_effect=StoreError('Unavailable'))

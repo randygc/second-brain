@@ -13,9 +13,10 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import shutil
 import time
 import tempfile
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from .action_store import ActionDraft, StoreError
 from .action_search import search_actions, similar_actions
@@ -166,41 +167,63 @@ class SlackCommands:
                 self._notice(db, row['id'], row['thread'], "restart:" + boot_id,
                              "Possible-match choice is still pending. If you replied while I was offline, please repeat create anyway or cancel here.")
 
-    def backup(self, directory):
-        """Consistent SQLite snapshots, imports first; never reset live state."""
-        directory = Path(directory)
-        for source in [self.path.parent/'imports.sqlite3', self.path]:
-            if not source.exists():
-                continue
-            with tempfile.TemporaryDirectory(dir=self.path.parent) as scratch:
-                temporary = Path(scratch)/source.name
-                source_db = sqlite3.connect(source)
-                target_db = sqlite3.connect(temporary)
-                try:
-                    source_db.backup(target_db)
-                finally:
-                    target_db.close()
-                    source_db.close()
-                # Closed binary snapshot, owner-only atomic replacement.
-                directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-                fd, name = tempfile.mkstemp(dir=directory, prefix='.'+source.name)
-                try:
-                    with os.fdopen(fd, 'wb') as output:
-                        output.write(temporary.read_bytes())
-                        output.flush()
-                        os.fsync(output.fileno())
-                    os.replace(name, directory/source.name)
-                finally:
-                    if os.path.exists(name):
-                        os.unlink(name)
-
-    def work(self, limit=10):
+    @contextmanager
+    def _worker_lock(self):
         lock_path = self.path.with_suffix(self.path.suffix + ".lock")
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         with os.fdopen(fd, "w") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
+                yield False
+            else:
+                yield True
+
+    def backup(self, directory):
+        """Publish a complete two-journal generation under the command lock.
+
+        Defer while a worker is active. current.json selects the last complete
+        generation; interruption preserves the previous selection. Keep the
+        selected and previous generations. Restore only with workers stopped.
+        """
+        from .local_files import private_write
+        with self._worker_lock() as acquired:
+            if not acquired:
+                return False
+            directory = Path(directory)
+            manifest = directory/'current.json'
+            previous = json.loads(manifest.read_text())['generation'] if manifest.exists() else None
+            name = 'generation-' + uuid4().hex
+            generation = directory/name
+            generation.mkdir(parents=True, mode=0o700)
+            for source in [self.path.parent/'imports.sqlite3', self.path]:
+                if not source.exists():
+                    continue
+                with tempfile.TemporaryDirectory(dir=self.path.parent) as scratch:
+                    temporary = Path(scratch)/source.name
+                    source_db = sqlite3.connect(source)
+                    target_db = sqlite3.connect(temporary)
+                    try:
+                        source_db.backup(target_db)
+                    finally:
+                        target_db.close()
+                        source_db.close()
+                    target = generation/source.name
+                    fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                    with os.fdopen(fd, 'wb') as output:
+                        output.write(temporary.read_bytes())
+                        output.flush()
+                        os.fsync(output.fileno())
+            private_write(manifest, json.dumps({'generation':name})+'\n')
+            for old in directory.iterdir():
+                if (re.fullmatch(r'generation-[a-f0-9]{32}', old.name)
+                        and old.name not in {name, previous} and old.is_dir() and not old.is_symlink()):
+                    shutil.rmtree(old)
+            return True
+
+    def work(self, limit=10):
+        with self._worker_lock() as acquired:
+            if not acquired:
                 return
             with self.db() as db:
                 rows = [dict(r) for r in db.execute(
