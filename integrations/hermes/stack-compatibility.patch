@@ -1,0 +1,201 @@
+diff --git a/services/hermes/start.ts b/services/hermes/start.ts
+index db1fc58..fb048ea 100644
+--- a/services/hermes/start.ts
++++ b/services/hermes/start.ts
+@@ -79,7 +79,7 @@ export default async function start(): Promise<void> {
+       'sudo systemctl daemon-reload',
+       'sudo systemctl enable --now hermes-dashboard hermes-gateway hermes-logtail',
+       'sudo systemctl restart hermes-logtail',
+-      'sudo hermes gateway restart --system',
++      'sudo systemctl restart hermes-gateway',
+     ].join(' && '),
+     { stdio: 'inherit' },
+   )
+diff --git a/services/hermes/systemd/hermes-gateway.service b/services/hermes/systemd/hermes-gateway.service
+index d1d4b65..b23ef53 100644
+--- a/services/hermes/systemd/hermes-gateway.service
++++ b/services/hermes/systemd/hermes-gateway.service
+@@ -8,13 +8,12 @@ StartLimitIntervalSec=0
+ Type=simple
+ User=__REMOTE_USER__
+ Group=__REMOTE_USER__
+-ExecStart=/opt/hermes-agent/venv/bin/python -m hermes_cli.main gateway run --replace
++ExecStart=/home/__REMOTE_USER__/.local/bin/hermes gateway run --replace
+ WorkingDirectory=/opt/hermes-agent
+ Environment="HOME=/home/__REMOTE_USER__"
+ Environment="USER=__REMOTE_USER__"
+ Environment="LOGNAME=__REMOTE_USER__"
+ Environment="PATH=/opt/hermes-agent/venv/bin:/opt/hermes-agent/node_modules/.bin:/home/__REMOTE_USER__/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+-Environment="VIRTUAL_ENV=/opt/hermes-agent/venv"
+ Environment="HERMES_HOME=/home/__REMOTE_USER__/.hermes"
+ # API_SERVER_* env vars (HOST/PORT/KEY/ENABLED) — when HERMES_GATEWAY_ALLOW_ACCESS=true
+ # in .stack/.env, services/hermes/build.sh installs them via a drop-in at
+diff --git a/services/litellm/config.yaml.template b/services/litellm/config.yaml.template
+index f7e65ff..12c1948 100644
+--- a/services/litellm/config.yaml.template
++++ b/services/litellm/config.yaml.template
+@@ -1,158 +1,13 @@
+-# Models Honcho consumes (chat tiers via OpenRouter; embeddings via Voyage).
++# Subscription-only routes. Keep provider keys and paid fallbacks out of this file.
+ model_list:
+-  # Honcho deriver models
+-  - model_name: glm-4.7-flash
++  - model_name: cliproxy/gpt-6-luna
+     litellm_params:
+-      model: openrouter/z-ai/glm-4.7-flash
+-      api_key: os.environ/OPENROUTER_API_KEY
+-  - model_name: grok-4.3
+-    litellm_params:
+-      model: openrouter/x-ai/grok-4.3
+-      api_key: os.environ/OPENROUTER_API_KEY
+-  - model_name: glm-5
+-    litellm_params:
+-      model: openrouter/z-ai/glm-5
+-      api_key: os.environ/OPENROUTER_API_KEY
+-
+-  # Voyage Embedding Models
+-  - model_name: voyage-4-large
+-    litellm_params:
+-      model: voyage/voyage-4-large
+-      api_key: os.environ/VOYAGE_API_KEY
+-  - model_name: voyage-4-lite
+-    litellm_params:
+-      model: voyage/voyage-4-lite
+-      api_key: os.environ/VOYAGE_API_KEY
+-  - model_name: voyage-4
+-    litellm_params:
+-      model: voyage/voyage-4
+-      api_key: os.environ/VOYAGE_API_KEY
+-  - model_name: voyage-code-3
+-    litellm_params:
+-      model: voyage/voyage-code-3
+-      api_key: os.environ/VOYAGE_API_KEY
+-  - model_name: voyage-finance-2
+-    litellm_params:
+-      model: voyage/voyage-finance-2
+-      api_key: os.environ/VOYAGE_API_KEY
+-  - model_name: voyage-law-2
+-    litellm_params:
+-      model: voyage/voyage-law-2
+-      api_key: os.environ/VOYAGE_API_KEY
+-
+-  # Voyage reranker — lets hindsight's reranker run via LiteLLM (/v1/rerank)
+-  # instead of an in-process Torch cross-encoder (~600 MB). Observable in
+-  # SpendLogs like everything else. HINDSIGHT_RERANK_MODEL points here.
+-  - model_name: rerank-voyage
+-    litellm_params:
+-      model: voyage/rerank-2.5-lite
+-      api_key: os.environ/VOYAGE_API_KEY
+-    model_info:
+-      mode: rerank
+-
+-  # ChatGPT Subscription Models - via codex
+-  # These models require auth.json in ~/.config/litellm/chatgpt/ or whatever CHATGPT_TOKEN_DIR is set to
+-  # On first usage, if auth.json is not present, litellm prints the device pairing code in the logs
+-  # to use for oauth auth for chatgpt. Recommended to bind mount the ./chatgpt dir to ~/.config/litellm/chatgpt
+-  # so token rotation survives restarts after the initial auth token has been verified and refreshed.
+-  - model_name: chatgpt/gpt-5.5
+-    model_info:
+-      mode: responses
+-    litellm_params:
+-      model: chatgpt/gpt-5.5
+-  - model_name: chatgpt/gpt-5.4
+-    model_info:
+-      mode: responses
+-    litellm_params:
+-      model: chatgpt/gpt-5.4
+-  - model_name: chatgpt/gpt-5.4-mini
+-    model_info:
+-      mode: responses
+-    litellm_params:
+-      model: chatgpt/gpt-5.4-mini
+-  - model_name: chatgpt/gpt-5.3-codex
+-    model_info:
+-      mode: responses
+-    litellm_params:
+-      model: chatgpt/gpt-5.3-codex
+-  - model_name: chatgpt/gpt-5.3-codex-spark # lighter/faster codex variant
+-    model_info:
+-      mode: responses
+-    litellm_params:
+-      model: chatgpt/gpt-5.3-codex-spark
+-
+-  # CLIProxyAPI-routed ChatGPT/Codex subscription models. Plain openai-
+-  # compatible upstream (NOT model_info.mode: responses) so LiteLLM uses the
+-  # standard chat/completions client — it never touches the chatgpt/*
+-  # responses bridge, so the non-streaming bug (gotcha #5) does NOT apply,
+-  # AND full SpendLogs/prompt logging + streaming work. cliproxy reached by
+-  # sibling service name on the project network; CLIPROXY_API_KEY from env.
+-  # This is the streaming-correct replacement for the chatgpt/* entries above
+-  # (kept for A/B + rollback).
+-  - model_name: cliproxy/gpt-5.5
+-    litellm_params:
+-      model: openai/gpt-5.5
+-      api_base: http://cliproxyapi:8317/v1
+-      api_key: os.environ/CLIPROXY_API_KEY
+-  - model_name: cliproxy/gpt-5.4
+-    litellm_params:
+-      model: openai/gpt-5.4
+-      api_base: http://cliproxyapi:8317/v1
+-      api_key: os.environ/CLIPROXY_API_KEY
+-  - model_name: cliproxy/gpt-5.4-mini
+-    litellm_params:
+-      model: openai/gpt-5.4-mini
+-      api_base: http://cliproxyapi:8317/v1
+-      api_key: os.environ/CLIPROXY_API_KEY
+-  - model_name: cliproxy/gpt-5.3-codex
+-    litellm_params:
+-      model: openai/gpt-5.3-codex
+-      api_base: http://cliproxyapi:8317/v1
+-      api_key: os.environ/CLIPROXY_API_KEY
+-  - model_name: cliproxy/gpt-5.3-codex-spark # lighter/faster codex variant
+-    litellm_params:
+-      model: openai/gpt-5.3-codex-spark
+-      api_base: http://cliproxyapi:8317/v1
+-      api_key: os.environ/CLIPROXY_API_KEY
+-  - model_name: cliproxy/codex-auto-review # autonomous code-review codex variant
+-    litellm_params:
+-      model: openai/codex-auto-review
+-      api_base: http://cliproxyapi:8317/v1
+-      api_key: os.environ/CLIPROXY_API_KEY
+-  # Image generation via the same cliproxy/ChatGPT-subscription route.
+-  # mode: image_generation tells LiteLLM to route this model to its
+-  # /v1/images/generations endpoint (NOT /v1/chat/completions); cliproxy
+-  # speaks the openai images API natively. Callers: openai-python
+-  # client.images.generate(model="cliproxy/gpt-image-2", ...).
+-  - model_name: cliproxy/gpt-image-2
+-    model_info:
+-      mode: image_generation
+-    litellm_params:
+-      model: openai/gpt-image-2
++      model: openai/gpt-6-luna
+       api_base: http://cliproxyapi:8317/v1
+       api_key: os.environ/CLIPROXY_API_KEY
+-
+ litellm_settings:
+-  drop_params: true # tolerate caller params a provider doesn't take
+-  # Centralized fallback: if a cliproxy/* model errors (ChatGPT-sub quota/
+-  # 429/5xx) LiteLLM transparently retries on glm-4.7-flash (OpenRouter,
+-  # cheap/unmetered). Defined once here so EVERY consumer (Hermes, Honcho,
+-  # agentmemory, hindsight) inherits it — no per-service fallback config.
+-  fallbacks:
+-    - cliproxy/gpt-5.5: [glm-4.7-flash]
+-    - cliproxy/gpt-5.4: [glm-4.7-flash]
+-    - cliproxy/gpt-5.4-mini: [glm-4.7-flash]
+-    - cliproxy/gpt-5.3-codex: [glm-4.7-flash]
+-    - cliproxy/gpt-5.3-codex-spark: [glm-4.7-flash]
+-    - cliproxy/codex-auto-review: [glm-4.7-flash]
+-    # cliproxy/gpt-image-2: no fallback — different modality (image_generation,
+-    # not chat). A chat fallback wouldn't produce a usable image.
+-
++  drop_params: true
++  fallbacks: []
+ general_settings:
+   store_model_in_db: true
+-  # Verified against image ghcr.io/berriai/litellm-database:main-latest
+-  # (litellm 1.82.6): both store_model_in_db and store_prompts_in_spend_logs
+-  # are valid fields of litellm.proxy._types.ConfigGeneralSettings.
+-  # store_prompts_in_spend_logs writes request+response into
+-  # LiteLLM_SpendLogs (surfaced in the UI).
+-  store_prompts_in_spend_logs: true # request+response in SpendLogs + UI
++  store_prompts_in_spend_logs: false
