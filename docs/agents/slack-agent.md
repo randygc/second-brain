@@ -1,6 +1,6 @@
 # Slack agent instructions
 
-Status: slice 1 command implementation activated November 8, 2026; live acceptance checks remain in progress. Read the [runbook](../features/slack-slice-1.md) for the installed syntax, operator commands and recovery rules. This document grants no runtime tools. Later-slice routes below remain planned capabilities.
+Status: slice 1 command implementation activated November 8, 2026; final acceptance completed November 10, 2026 with test limits recorded in the runbook. Read the [runbook](../features/slack-slice-1.md) for the installed syntax, operator commands and recovery rules. This document grants no runtime tools. Later-slice routes below remain planned capabilities.
 
 ## Read before handling requests
 

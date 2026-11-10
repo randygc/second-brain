@@ -1,6 +1,6 @@
 # Slack agent iteration specification
 
-Status: baseline design confirmed by the owner October 29, 2026; slice 1 activated November 8, 2026; remaining live acceptance checks are in progress. This document does not activate any runtime or scheduler. Review with the [four-slice plan](slack-agent-plan.md) and [agent instructions](../agents/slack-agent.md).
+Status: baseline design confirmed by the owner October 29, 2026; slice 1 activated November 8, 2026; final acceptance completed November 10, 2026 with test limits documented in the slice 1 runbook. This document does not activate any runtime or scheduler. Review with the [four-slice plan](slack-agent-plan.md) and [agent instructions](../agents/slack-agent.md).
 
 ## Purpose and boundaries
 

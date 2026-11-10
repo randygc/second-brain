@@ -27,7 +27,7 @@ Initial totals: Standards 2 findings (worst: backup/restore consistency); Spec 1
 - Native Hermes plugin validation, real-Bolt production dispatch with zero ordinary core listener calls, bounded synthetic subscription interpretation and live read-only Linear pagination passed.
 - Live owner help/add/search, duplicate cancellation and ordinary restart passed, preserving one confirmed verification issue.
 - Live Slack `search --all a` and threaded `next` returned two pages.
-- Closure checks for closed filtering and restart while a choice is pending are recorded in the runbook after journal verification.
+- Live closed-item filtering passed. A fresh pending duplicate choice survived Hermes restart; the owner cancelled it afterward, the cancellation response was delivered, exactly one fixture import remained, no duplicate was created, and original imports were preserved. Final journal verification passed November 10, 2026.
 - No second human Slack account was available. This live-human scenario is explicitly unperformed; real-Bolt unauthorized-user/channel/workspace/DM tests and mismatched-identity checks against the deployed application provide the substitute evidence. Do not describe them as a second-human live test.
 - No real subscription quota was exhausted. Rejection/recovery is covered with controlled failure tests; no paid fallback is configured.
 - Clickable Slack links remain follow-up issue #9 and are not bundled into this merge.

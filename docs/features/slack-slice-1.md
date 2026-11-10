@@ -1,6 +1,6 @@
 # Slice 1: Slack additions and current Linear searches
 
-Implementation tracked in [issue #8](https://github.com/randygc/second-brain/issues/8). Code is **active** in the configured private Slack channel. Workspace, private-channel/bot/owner membership and effective deny defaults passed verification. Live help, add → Linear → search, possible-match cancellation and a controlled gateway restart passed. Exactly one verification item was created; six receipts remained complete with no pending replies across restart. The existing Calendar scheduler, credentials, journal and checkpoint were preserved.
+Implementation tracked in [issue #8](https://github.com/randygc/second-brain/issues/8). Slice 1 is **accepted and active** in the configured private Slack channel; final acceptance completed November 10, 2026. Workspace, private-channel/bot/owner membership and effective deny defaults passed verification. Live help, add → Linear → search, possible-match cancellation and a controlled gateway restart passed. The initial activation created one verification item and preserved six completed receipts across restart; final acceptance below used one additional isolated fixture. The existing Calendar scheduler, credentials, journal and checkpoint were preserved.
 
 ## Use after activation
 
@@ -76,7 +76,7 @@ The CLI accepts `--config /absolute/path/runtime.json` plus `check`, `receive` (
 
 Offline verification: `python3 -m unittest discover -s tests -q`. The production middleware probe is `tools/compatibility/probe_slack_plugin.py`; run it in the pinned isolated Bolt environment after staging. It imports the actual production plugin and durable command application, uses real Bolt dispatch with core listeners installed first, and blocks network calls. The older exploratory probe establishes the pinned Hermes registration contract.
 
-Verified before activation: 117 application/regression tests; native Hermes plugin manifest/isolated-registration/security validation; production plugin dispatch and failure-closed checks; synthetic quota rejection with explicit commands still succeeding; replay/restart, duplicate choice, uncertain Linear mutation reconciliation, current-state pagination, partial read failures, retained-history recovery and pending reply fallback. A read-only live Linear contract check fetched 207 team items. Two synthetic intent requests through the existing subscription gateway returned add/search classifications; neither created a Linear item. The full live gateway/Slack path is still unverified.
+Verified before activation: 117 application/regression tests; native Hermes plugin manifest/isolated-registration/security validation; production plugin dispatch and failure-closed checks; synthetic quota rejection with explicit commands still succeeding; replay/restart, duplicate choice, uncertain Linear mutation reconciliation, current-state pagination, partial read failures, retained-history recovery and pending reply fallback. A read-only live Linear contract check fetched 207 team items. Two synthetic intent requests through the existing subscription gateway returned add/search classifications; neither created a Linear item. These pre-activation checks were subsequently extended by the live acceptance records below.
 
 After credentials and activation:
 
@@ -86,7 +86,7 @@ After credentials and activation:
 4. Restart once while a receipt/choice is pending, verify history replay and outbox recovery, and test a repeat confirmation if retained thread permission is unavailable. Test `next` on a multi-page search.
 5. Temporarily reject interpretation at the application seam; verify direct commands still work and a saved natural-language request resumes on successful access. Restore the original configuration. Do not exhaust the real subscription as a test.
 
-Leave this issue open until those checks pass. The operator may archive/close smoke-test items only with owner authorization; the plugin has no delete or completion capability.
+Acceptance is complete with the explicitly recorded test substitutions below. The operator may archive/close smoke-test items only with owner authorization; the plugin has no delete or completion capability.
 
 ## Disable
 
@@ -100,6 +100,14 @@ The running process has the configured channel, core sentinel user allowlists, a
 
 One search pasted with surrounding backticks returned clarification; resubmitting the plain text command succeeded. Submit deterministic commands without code/quote wrappers.
 
-Automated quota rejection/recovery, pagination, closed filtering, unauthorized identity/DM/channel dispatch and pending-choice recovery coverage remains the 117-test suite plus real-Bolt production probe described above. Additional live pagination/closed-filter checks, restart during a pending choice, and a second real Slack identity were not exercised in this activation. The configured route was not deliberately exhausted. These limits remain tracked in issue #8; activation/core live checks are complete.
+This initial activation did not exercise live pagination, closed filtering or restart during a pending choice; the final acceptance record below completes those checks. The configured route was not deliberately exhausted.
 
 The deployment tool now creates an initial activation timestamp only after Slack preflight passes, preventing a failed preflight on a future fresh setup from establishing an earlier history boundary. Existing live journals and their activation identity were preserved.
+
+## Final acceptance — November 10, 2026
+
+All 119 Python tests passed after the review corrections, including concurrent backup/restore and uncertain-write reconciliation regressions. Independent Standards and Spec re-reviews found no unresolved material blocker; see the [review record](../reviews/slack-slice-1.md).
+
+Live search returned two pages through a threaded `next`. Default search excluded a known closed action item, while the same query with `--all` included it. A fresh isolated cancellation test used two new top-level additions with one unique synthetic title: the first produced one confirmed Linear item; the second waited for a possible-match decision. Hermes restarted with that exact choice still waiting. The owner's subsequent threaded `cancel` completed the receipt and delivered its cancellation response. Journal verification found one fixture import, no duplicate issue and no remaining test choice; all original imports were preserved. Existing journals and history cursors were retained throughout the test.
+
+No second human Slack account was available, so that live test was not performed. The accepted substitute is the real-Bolt unauthorized-user/channel/workspace/DM tests plus deployed-application identity mismatch checks. Real subscription quota was not exhausted; controlled rejection/recovery tests cover that path. These are the remaining validation limits, not outstanding slice 1 implementation work. Clickable Linear links in Slack remain the separate [issue #9](https://github.com/randygc/second-brain/issues/9).

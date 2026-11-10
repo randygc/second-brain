@@ -1,6 +1,6 @@
 # Hermes slice 1 compatibility check
 
-Status: dashboard access confirmed by the owner and subscription model route verified November 5, 2026; offline Bolt dispatch previously verified. Production Slack integration remains slice 1 work. Owner approved Q55: Hermes owns Slack ingress from slice 1; bounded subscription-model interpretation is permitted, while explicit commands remain deterministic. See [specification](slack-agent-spec.md).
+Status: dashboard access confirmed by the owner and subscription model route verified November 5, 2026; offline Bolt dispatch previously verified. Production Slack integration is active; final slice 1 acceptance completed November 10, 2026, as recorded in the runbook. Owner approved Q55: Hermes owns Slack ingress from slice 1; bounded subscription-model interpretation is permitted, while explicit commands remain deterministic. See [specification](slack-agent-spec.md).
 
 ## Local inventory
 
@@ -93,3 +93,8 @@ The prepared activation tool verifies private channel/bot/owner membership and s
 ## Activated private Slack integration — November 8, 2026
 
 Hermes PM enabled the plugin and the real gateway started successfully with its Slack credentials. The restricted private channel passed workspace, bot/owner membership and privacy checks. Effective process settings deny ordinary core-user access and disable DMs/allow-all. Live owner help, one confirmed Linear addition, search finding that item, and similar-item cancellation all passed. A controlled gateway restart retained six completed receipts, one confirmed import and zero undelivered replies; history reconciliation advanced after startup. The real token can retrieve the cancellation from retained private-channel thread replies. No second issue was created. These extend the earlier offline/native-plugin and synthetic model checks; see the runbook's activation record for remaining live-test limits.
+
+
+## Final slice 1 acceptance — November 10, 2026
+
+Live pagination, closed-item filtering and a fresh duplicate-choice cancellation after gateway restart passed. Journal checks confirmed one fixture import, no duplicate, no pending test choice and preserved original imports. The 119-test suite and independent review corrections passed. The [runbook](slack-slice-1.md#final-acceptance--november-10-2026) records the second-human and real-quota test substitutions.

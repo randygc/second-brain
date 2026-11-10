@@ -1,6 +1,6 @@
 # Slack agent implementation plan
 
-Status: slice 1 activated November 8, 2026; private-channel checks, live help/add/search, duplicate cancellation and controlled restart passed. Extended live validation limits are recorded in the runbook. Read the [specification](slack-agent-spec.md) and [initial agent instructions](../agents/slack-agent.md). Implementation is tracked in [GitHub issue #8](https://github.com/randygc/second-brain/issues/8). See the [slice 1 runbook](slack-slice-1.md) for commands, validation and activation.
+Status: slice 1 activated November 8, 2026; private-channel checks, live help/add/search, duplicate cancellation and controlled restart passed. Final acceptance completed November 10, 2026, including pagination, closed filtering and cancellation after restarting a pending choice; test limits are recorded in the runbook. Read the [specification](slack-agent-spec.md) and [initial agent instructions](../agents/slack-agent.md). Implementation is tracked in [GitHub issue #8](https://github.com/randygc/second-brain/issues/8). See the [slice 1 runbook](slack-slice-1.md) for commands, validation and activation.
 
 Deliver four end-to-end slices in this order. Resolve each slice's open decisions from the specification before coding it. Keep common logic behind small interfaces; scripts and agent tools call the same application functions. Avoid a separate infrastructure-only slice or speculative tool framework.
 
@@ -40,4 +40,4 @@ Acceptance: proposal → scoped owner approval → bounded tools → artifact/th
 
 Use focused application-level behavioral tests and adapter contract checks; avoid tests that merely mirror private implementation. Verify current platform contracts before integration choices. Keep test data synthetic and private credentials outside version control. Use minimal explicitly scoped live checks after offline verification; inspect real operational state before activation. Do not reset the existing journal/checkpoint to bypass errors. Prepare rollback/disable steps that preserve durable state for each slice.
 
-The owner authorized proceeding with slice 1. Remaining human app/token setup and live acceptance are tracked in its runbook; later slices retain their own decision and review steps.
+The owner authorized proceeding with slice 1. Slice 1 setup and acceptance are complete as recorded in its runbook; later slices retain their own decision and review steps.
