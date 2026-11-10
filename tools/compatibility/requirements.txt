@@ -1,0 +1,4 @@
+# Pinned to Hermes v0.22.5's Slack extra. Use a separate disposable environment.
+slack-bolt==1.30.0
+slack-sdk==3.44.1
+aiohttp==3.14.5

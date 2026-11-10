@@ -11,6 +11,7 @@ from urllib.request import Request
 from uuid import uuid4
 
 from .action_store import ActionDraft, ImportResult, SourceReview, StoreError
+from .action_search import ActionSummary
 from .provenance import source_key, revision, fingerprint
 from .source_review import REVIEW_FORMAT, review_comments, comment_matches
 
@@ -101,8 +102,10 @@ def issue_description(draft: ActionDraft) -> str:
     flags = p.get("extracted_payload", {}).get("review_flags", [])
     review = "\n- Review flags (unresolved): " + ", ".join(flags) if flags else ""
     return (rendered_details(draft) + "\n\n---\n## Import provenance\n\n"
-            f"- Source: {p['source_type']}\n- Scheduled calendar date: {p['scheduled_date']}\n"
-            f"- Original source creation: {p.get('source_created_at') or 'Unavailable (not substituted)'}\n"
+            f"- Source: {p['source_type']}\n"
+            + (f"- Scheduled calendar date: {p['scheduled_date']}\n" if "scheduled_date" in p else "")
+            + (f"- Source link: {p['source_url']}\n" if p.get("source_url") else "")
+            + f"- Original source creation: {p.get('source_created_at') or 'Unavailable (not substituted)'}\n"
             f"- Source modification: {p.get('source_updated_at') or 'Unavailable'}\n"
             f"- Import identity: {draft.import_identity}{review}\n\n"
             "Original source content and portable metadata:\n\n" + _fence(json.dumps(p, ensure_ascii=False, indent=2), "json"))
@@ -333,8 +336,7 @@ class LinearActionStore:
             for prior, in db.execute("SELECT snapshot FROM imports WHERE destination=?", (destination,)):
                 p = json.loads(prior)["provenance"]
                 current = draft.provenance
-                keys = ["source_type", "calendar_id", "source_record_id"]
-                if all(p.get(k) == current.get(k) for k in keys) and p.get("original_content") != current.get("original_content"):
+                if source_key(p) == source_key(current) and p.get("original_content") != current.get("original_content"):
                     raise StoreError("Source content changed since its initial import. No new slots or replacements were created; run batch source review before importing changed content.")
             row = db.execute("SELECT issue_id, snapshot FROM imports WHERE destination=? AND import_identity=?", (destination, draft.import_identity)).fetchone()
             first_attempt = row is None
@@ -384,3 +386,40 @@ class LinearActionStore:
             raise StoreError("Cannot update the local import journal. Preserve it; do not switch journals or retry creation blindly.") from exc
         finally:
             db.close()
+
+
+class LinearActionReader:
+    """Fetch every team page or fail; never present partial data as complete."""
+    def __init__(self, store):
+        self.store = store
+
+    def list_actions(self):
+        self.store._destination()
+        result, cursor, seen, identities = [], None, set(), set()
+        document = '''query SlackActions($team: ID!, $after: String) {
+          issues(first: 50, after: $after, includeArchived: true, filter: {team: {id: {eq: $team}}}) {
+            nodes { id identifier title description url dueDate archivedAt team { id } state { name type } }
+            pageInfo { hasNextPage endCursor }
+          }
+        }'''
+        while True:
+            data = self.store.client.query(document, {"team": self.store.team_id, "after": cursor})
+            try:
+                page = data["issues"]
+                for node in page["nodes"]:
+                    if node["team"]["id"] != self.store.team_id or node["id"] in identities:
+                        raise StoreError("Conflicting Linear search identities; retry the complete search.")
+                    identities.add(node["id"])
+                    details = (node["description"] or "").rsplit("\n\n---\n## Import provenance\n", 1)[0]
+                    result.append(ActionSummary(node["id"], node["identifier"], node["title"], details,
+                                                node["state"]["name"], node["state"]["type"], node["url"],
+                                                node["dueDate"], bool(node["archivedAt"])))
+                info = page["pageInfo"]
+                if not info["hasNextPage"]:
+                    return result
+                cursor = info["endCursor"]
+                if not cursor or cursor in seen:
+                    raise StoreError("Incomplete Linear search pagination; no partial results returned.")
+                seen.add(cursor)
+            except (KeyError, TypeError, AttributeError):
+                raise StoreError("Incomplete Linear search response; no partial results returned.") from None

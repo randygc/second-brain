@@ -9,7 +9,7 @@ def fingerprint(value) -> str:
 
 
 def source_key(record: dict) -> str:
-    return json.dumps([record["source_type"], record["calendar_id"], record["source_record_id"]], separators=(",", ":"))
+    return json.dumps([record["source_type"], record.get("source_scope", record.get("calendar_id")), record["source_record_id"]], separators=(",", ":"))
 
 
 def revision(record: dict) -> str:
